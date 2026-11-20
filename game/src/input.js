@@ -1,48 +1,53 @@
-// Keyboard + mouse input state. WASD/arrows to move, E enter car, F punch, mouse aim/shoot.
+// Keyboard + mouse input: WASD/arrows, E vehicle, F punch,
+// mouse click to shoot, P/Esc pause, Shift to run on foot.
+
 export class Input {
   constructor(canvas) {
     this.keys = new Set();
-    this.mouseX = 0;
-    this.mouseY = 0;
-    this.mouseDown = false;
-    this._pressed = new Set();
+    this.pressed = new Set();
+    this.mouse = { x: 0, y: 0, down: false, clicked: false };
+    this.canvas = canvas;
 
     window.addEventListener("keydown", (e) => {
       const k = e.key.toLowerCase();
-      if (!this.keys.has(k)) this._pressed.add(k);
+      if (!this.keys.has(k)) this.pressed.add(k);
       this.keys.add(k);
-      if (["arrowup", "arrowdown", "arrowleft", "arrowright", " "].includes(k)) e.preventDefault();
+      if (["arrowup", "arrowdown", "arrowleft", "arrowright", " "].includes(k)) {
+        e.preventDefault();
+      }
     });
-    window.addEventListener("keyup", (e) => this.keys.delete(e.key.toLowerCase()));
+    window.addEventListener("keyup", (e) => {
+      this.keys.delete(e.key.toLowerCase());
+    });
 
-    if (canvas) {
-      canvas.addEventListener("mousemove", (e) => {
-        const rect = canvas.getBoundingClientRect();
-        this.mouseX = e.clientX - rect.left;
-        this.mouseY = e.clientY - rect.top;
-      });
-      canvas.addEventListener("mousedown", () => { this.mouseDown = true; });
-      window.addEventListener("mouseup", () => { this.mouseDown = false; });
-    }
+    canvas.addEventListener("mousemove", (e) => {
+      const r = canvas.getBoundingClientRect();
+      this.mouse.x = (e.clientX - r.left) * (canvas.width / r.width);
+      this.mouse.y = (e.clientY - r.top) * (canvas.height / r.height);
+    });
+    canvas.addEventListener("mousedown", () => {
+      this.mouse.down = true;
+      this.mouse.clicked = true;
+    });
+    window.addEventListener("mouseup", () => {
+      this.mouse.down = false;
+    });
   }
 
-  isDown(...keys) {
-    return keys.some((k) => this.keys.has(k.toLowerCase()));
+  axis() {
+    const k = this.keys;
+    return {
+      x: (k.has("d") || k.has("arrowright") ? 1 : 0) - (k.has("a") || k.has("arrowleft") ? 1 : 0),
+      y: (k.has("s") || k.has("arrowdown") ? 1 : 0) - (k.has("w") || k.has("arrowup") ? 1 : 0),
+    };
   }
 
-  justPressed(key) {
-    return this._pressed.has(key.toLowerCase());
+  wasPressed(key) {
+    return this.pressed.has(key);
   }
 
   endFrame() {
-    this._pressed.clear();
+    this.pressed.clear();
+    this.mouse.clicked = false;
   }
-
-  get up() { return this.isDown("w", "arrowup"); }
-  get down() { return this.isDown("s", "arrowdown"); }
-  get left() { return this.isDown("a", "arrowleft"); }
-  get right() { return this.isDown("d", "arrowright"); }
-  get enterCar() { return this.justPressed("e"); }
-  get punch() { return this.justPressed("f"); }
-  get pause() { return this.justPressed("escape"); }
 }

@@ -1,47 +1,37 @@
-// World constants for Solar Bay: Outlaw. All distances in pixels, speeds in px/s.
-export const TILE = 48;
-export const CITY_COLS = 40;
-export const CITY_ROWS = 40;
-export const BLOCK_SIZE = 5; // tiles per block including road
-export const WORLD_WIDTH = CITY_COLS * TILE;
-export const WORLD_HEIGHT = CITY_ROWS * TILE;
+// Solar Bay: Outlaw — shared world constants.
 
-export const PLAYER_SPEED = 210;
-export const PLAYER_RUN_SPEED = 300;
-export const PLAYER_RADIUS = 14;
-export const PLAYER_MAX_HEALTH = 100;
+export const TILE = 32;
+export const GRID_W = 80;
+export const GRID_H = 60;
+export const WORLD_W = TILE * GRID_W;
+export const WORLD_H = TILE * GRID_H;
 
+export const PLAYER_SPEED = 180; // px per second on foot
+export const PLAYER_RUN = 260;
 export const CAR_ACCEL = 320;
 export const CAR_BRAKE = 420;
 export const CAR_MAX_SPEED = 420;
-export const CAR_REVERSE_SPEED = 140;
-export const CAR_STEER = 2.6;
-export const CAR_WIDTH = 30;
-export const CAR_LENGTH = 52;
+export const CAR_TURN = 2.6; // radians per second at speed
+export const POLICE_SPEED = 400;
 
-export const TRAFFIC_SPEED = 170;
-export const POLICE_SPEED = 360;
-export const PED_SPEED = 70;
-
-export const PUNCH_RANGE = 36;
-export const PUNCH_DAMAGE = 12;
-export const PISTOL_DAMAGE = 34;
-export const PISTOL_RANGE = 520;
+export const MAX_WANTED = 5;
+export const WANTED_DECAY_SECONDS = 18;
 
 export const COLORS = {
-  road: "#3a3f46",
-  roadLine: "#f2d16b",
-  sidewalk: "#8a8f96",
-  grass: "#4f8f4f",
+  road: "#3c4046",
+  roadLine: "#d8d8c8",
+  grass: "#4a7c4f",
   sand: "#e6cf9a",
-  water: "#2b6cb0",
-  waterDeep: "#1d4e79",
-  buildingRoofs: ["#b5654d", "#7a6a8a", "#5d7a8a", "#a08a5a", "#6a7a5a", "#8a5a6a"],
-  player: "#e4572e",
-  police: "#f4f4f4",
-  policeBlue: "#2456a6",
-  pedPalette: ["#d9a05b", "#5b8ad9", "#7ad95b", "#d95b8a", "#9a5bd9", "#5bd9c8"],
-  carPalette: ["#c0392b", "#2980b9", "#27ae60", "#f39c12", "#8e44ad", "#ecf0f1", "#2c3e50"],
+  water: "#2e6fb0",
+  sidewalk: "#9aa0a6",
+  building: ["#8d6e63", "#a1887f", "#90a4ae", "#b0bec5", "#c9a86a"],
+  player: "#ffd23f",
+  police: "#2456c8",
+  policeStripe: "#ffffff",
+  ped: ["#e57373", "#64b5f6", "#81c784", "#ffb74d", "#ba68c8"],
+  car: ["#c0392b", "#2980b9", "#27ae60", "#f39c12", "#7f8c8d", "#8e44ad"],
 };
 
-export const DEFAULT_SEED = 1337;
+// localStorage key — bump the version suffix if the save shape changes.
+export const SAVE_KEY = "solar-bay-outlaw-save-v1";
+export const DEFAULT_SEED = 42;

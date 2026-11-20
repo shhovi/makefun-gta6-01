@@ -1,7 +1,9 @@
-// Seeded PRNG (mulberry32) and helpers. Deterministic for a given seed — same seed, same city.
+// Seeded PRNG (mulberry32) so the city and screenshot scenes are
+// fully deterministic for a given seed.
+
 export function mulberry32(seed) {
   let a = seed >>> 0;
-  return function () {
+  return function next() {
     a |= 0;
     a = (a + 0x6d2b79f5) | 0;
     let t = Math.imul(a ^ (a >>> 15), 1 | a);
@@ -10,23 +12,29 @@ export function mulberry32(seed) {
   };
 }
 
-export class Random {
+export class Rng {
   constructor(seed) {
     this.next = mulberry32(seed);
   }
-  float() {
-    return this.next();
-  }
-  range(min, max) {
+
+  float(min = 0, max = 1) {
     return min + this.next() * (max - min);
   }
+
   int(min, max) {
-    return Math.floor(this.range(min, max + 1));
+    return Math.floor(this.float(min, max + 1));
   }
-  pick(arr) {
-    return arr[Math.floor(this.next() * arr.length)];
+
+  pick(list) {
+    return list[Math.floor(this.next() * list.length)];
   }
+
   chance(p) {
     return this.next() < p;
   }
+}
+
+export function makeRng(seed) {
+  // Same seed always produces the same sequence — city + screenshots rely on it.
+  return new Rng(seed);
 }

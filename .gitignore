@@ -1,5 +1,5 @@
 node_modules/
 .DS_Store
 *.log
-screenshots/*.tmp
-deno.lock
+# editor / OS noise
+*.swp

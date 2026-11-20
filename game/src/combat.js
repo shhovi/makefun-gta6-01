@@ -1,107 +1,66 @@
-// Combat: punch melee + pistol shooting, damage, NPC reactions.
-// Hitscan pistol with tracer lines; gunfire scares nearby pedestrians and raises heat.
-import { PUNCH_RANGE, PUNCH_DAMAGE, PISTOL_DAMAGE, PISTOL_RANGE } from "./config.js";
+// Combat: F to punch, mouse click to fire the pistol.
+// Every violent act adds heat, so the wanted stars follow quickly.
 
-export class Combat {
-  constructor() {
-    this.shotCooldown = 0;
-    this.muzzleFlash = 0;
-    this.tracers = [];
-  }
+import { scarePedestrians } from "./pedestrians.js";
+import { addCrime } from "./police.js";
 
-  punch(player, peds, wanted, audio) {
-    let hit = false;
-    for (const ped of peds) {
-      if (!ped.alive) continue;
-      const d = Math.hypot(ped.x - player.x, ped.y - player.y);
-      if (d <= PUNCH_RANGE + ped.radius) {
-        ped.damage(PUNCH_DAMAGE);
-        ped.scare(player.x, player.y);
-        hit = true;
-      }
-    }
-    if (hit) {
-      wanted.addCrime(0.4);
-      audio?.punch();
-    }
-    return hit;
-  }
+export const PUNCH_RANGE = 34;
+export const PUNCH_DAMAGE = 12;
+export const PISTOL_DAMAGE = 30;
+export const PISTOL_RANGE = 520;
 
-  shoot(player, aimAngle, peds, cars, wanted, audio) {
-    if (this.shotCooldown > 0) return false;
-    this.shotCooldown = 0.28;
-    this.muzzleFlash = 0.06;
-    audio?.gunshot();
-    wanted.addCrime(0.6);
-
-    const dx = Math.cos(aimAngle);
-    const dy = Math.sin(aimAngle);
-    let bestDist = PISTOL_RANGE;
-    let bestPed = null;
-    let bestCar = null;
-
-    for (const ped of peds) {
-      if (!ped.alive) continue;
-      const vx = ped.x - player.x;
-      const vy = ped.y - player.y;
-      const along = vx * dx + vy * dy;
-      if (along < 0 || along > bestDist) continue;
-      const perp = Math.abs(vx * dy - vy * dx);
-      if (perp <= ped.radius + 4) {
-        bestDist = along;
-        bestPed = ped;
-        bestCar = null;
-      }
-    }
-    for (const car of cars) {
-      const vx = car.x - player.x;
-      const vy = car.y - player.y;
-      const along = vx * dx + vy * dy;
-      if (along < 0 || along > bestDist) continue;
-      const perp = Math.abs(vx * dy - vy * dx);
-      if (perp <= car.width) {
-        bestDist = along;
-        bestCar = car;
-        bestPed = null;
-      }
-    }
-
-    this.tracers.push({
-      x1: player.x, y1: player.y,
-      x2: player.x + dx * bestDist, y2: player.y + dy * bestDist,
-      ttl: 0.07,
-    });
-
-    if (bestPed) {
-      bestPed.damage(PISTOL_DAMAGE);
-      if (bestPed.alive) bestPed.scare(player.x, player.y);
-      wanted.addCrime(0.8);
-    }
-    if (bestCar) bestCar.damage(PISTOL_DAMAGE * 0.5);
-
-    // Nearby pedestrians flee at the sound of gunfire.
-    for (const ped of peds) {
-      if (ped.alive && Math.hypot(ped.x - player.x, ped.y - player.y) < 320) {
-        ped.scare(player.x, player.y);
-      }
-    }
-    return true;
-  }
-
-  update(dt) {
-    this.shotCooldown = Math.max(0, this.shotCooldown - dt);
-    this.muzzleFlash = Math.max(0, this.muzzleFlash - dt);
-    this.tracers = this.tracers.filter((t) => (t.ttl -= dt) > 0);
-  }
-
-  drawTracers(ctx, camera) {
-    ctx.strokeStyle = "rgba(255,230,150,0.9)";
-    ctx.lineWidth = 2;
-    for (const t of this.tracers) {
-      ctx.beginPath();
-      ctx.moveTo(t.x1 - camera.x, t.y1 - camera.y);
-      ctx.lineTo(t.x2 - camera.x, t.y2 - camera.y);
-      ctx.stroke();
+export function punch(player, peds, wanted, audio) {
+  if (player.vehicle || player.punchCooldown > 0) return false;
+  player.punchCooldown = 0.35;
+  audio?.punch();
+  for (const ped of peds) {
+    if (ped.health <= 0) continue;
+    const d = Math.hypot(ped.x - player.x, ped.y - player.y);
+    if (d <= PUNCH_RANGE) {
+      ped.health -= PUNCH_DAMAGE;
+      ped.fleeTimer = 3;
+      ped.angle = Math.atan2(ped.y - player.y, ped.x - player.x);
+      addCrime(wanted, 12);
+      scarePedestrians(peds, player.x, player.y, 180);
+      return true;
     }
   }
+  return false;
+}
+
+export function shoot(player, aimX, aimY, peds, vehicles, wanted, audio) {
+  if (player.shootCooldown > 0) return false;
+  player.shootCooldown = 0.28;
+  audio?.gunshot();
+  addCrime(wanted, 18);
+  scarePedestrians(peds, player.x, player.y, 320);
+
+  const dx = aimX - player.x;
+  const dy = aimY - player.y;
+  const len = Math.hypot(dx, dy) || 1;
+  const ux = dx / len;
+  const uy = dy / len;
+
+  // Nearest target roughly along the aim ray.
+  let best = null;
+  let bestDist = PISTOL_RANGE;
+  const consider = (target, radius) => {
+    const tx = target.x - player.x;
+    const ty = target.y - player.y;
+    const along = tx * ux + ty * uy;
+    if (along < 0 || along > PISTOL_RANGE) return;
+    const perp = Math.abs(tx * uy - ty * ux);
+    if (perp <= radius && along < bestDist) {
+      best = target;
+      bestDist = along;
+    }
+  };
+  for (const ped of peds) if (ped.health > 0) consider(ped, 12);
+  for (const car of vehicles) consider(car, 20);
+
+  if (best) {
+    best.health = Math.max(0, (best.health ?? 100) - PISTOL_DAMAGE);
+    if (best.fleeTimer !== undefined) best.fleeTimer = 3;
+  }
+  return true;
 }

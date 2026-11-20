@@ -1,88 +1,80 @@
-// Player: on-foot movement, vehicle entry/exit, health. Position syncs to the driven car.
-import { PLAYER_SPEED, PLAYER_RADIUS, PLAYER_MAX_HEALTH, COLORS } from "./config.js";
-import { isSolid } from "./city.js";
+// The player: on-foot movement, entering/exiting vehicles, health.
+// While driving, the player position simply follows the vehicle.
 
-export class Player {
-  constructor(x, y) {
-    this.x = x;
-    this.y = y;
-    this.angle = 0;
-    this.radius = PLAYER_RADIUS;
-    this.health = PLAYER_MAX_HEALTH;
-    this.maxHealth = PLAYER_MAX_HEALTH;
-    this.money = 0;
-    this.vehicle = null; // currently driven car, or null on foot
-    this.color = COLORS.player;
-    this.alive = true;
+import { PLAYER_SPEED, PLAYER_RUN, WORLD_W, WORLD_H } from "./config.js";
+import { isBlocked } from "./city.js";
+
+export function createPlayer(x, y) {
+  return {
+    x,
+    y,
+    angle: 0,
+    health: 100,
+    money: 0,
+    vehicle: null,
+    punchCooldown: 0,
+    shootCooldown: 0,
+  };
+}
+
+export function updatePlayer(player, input, city, dt) {
+  if (player.punchCooldown > 0) player.punchCooldown -= dt;
+  if (player.shootCooldown > 0) player.shootCooldown -= dt;
+
+  if (player.vehicle) {
+    player.x = player.vehicle.x;
+    player.y = player.vehicle.y;
+    player.angle = player.vehicle.angle;
+    return;
   }
 
-  get inVehicle() {
-    return this.vehicle !== null;
-  }
+  const axis = input.axis();
+  const len = Math.hypot(axis.x, axis.y);
+  if (len === 0) return;
+  const running = input.keys.has("shift");
+  const speed = running ? PLAYER_RUN : PLAYER_SPEED;
+  const nx = player.x + (axis.x / len) * speed * dt;
+  const ny = player.y + (axis.y / len) * speed * dt;
 
-  updateOnFoot(dt, input, city, aimAngle) {
-    let dx = 0;
-    let dy = 0;
-    if (input.left) dx -= 1;
-    if (input.right) dx += 1;
-    if (input.up) dy -= 1;
-    if (input.down) dy += 1;
-    const len = Math.hypot(dx, dy);
-    if (len > 0) {
-      dx /= len;
-      dy /= len;
-      const nx = this.x + dx * PLAYER_SPEED * dt;
-      const ny = this.y + dy * PLAYER_SPEED * dt;
-      if (!isSolid(city, nx, this.y)) this.x = nx;
-      if (!isSolid(city, this.x, ny)) this.y = ny;
+  if (!isBlocked(city, nx, player.y)) player.x = nx;
+  if (!isBlocked(city, player.x, ny)) player.y = ny;
+  player.x = Math.max(10, Math.min(WORLD_W - 10, player.x));
+  player.y = Math.max(10, Math.min(WORLD_H - 10, player.y));
+  player.angle = Math.atan2(axis.y, axis.x);
+}
+
+export function nearestVehicle(player, vehicles, maxDist = 48) {
+  let best = null;
+  let bestDist = maxDist;
+  for (const v of vehicles) {
+    const d = Math.hypot(v.x - player.x, v.y - player.y);
+    if (d < bestDist) {
+      best = v;
+      bestDist = d;
     }
-    if (aimAngle !== undefined) this.angle = aimAngle;
-    else if (len > 0) this.angle = Math.atan2(dy, dx);
   }
+  return best;
+}
 
-  tryEnterVehicle(cars) {
-    let best = null;
-    let bestDist = 56;
-    for (const car of cars) {
-      const d = Math.hypot(car.x - this.x, car.y - this.y);
-      if (d < bestDist) {
-        bestDist = d;
-        best = car;
-      }
-    }
-    if (best) {
-      this.vehicle = best;
-      best.driver = this;
-      this.x = best.x;
-      this.y = best.y;
-      return best;
-    }
-    return null;
-  }
-
-  exitVehicle() {
-    if (!this.vehicle) return;
-    const car = this.vehicle;
+export function toggleVehicle(player, vehicles) {
+  if (player.vehicle) {
+    const car = player.vehicle;
     car.driver = null;
-    this.x = car.x + Math.cos(car.angle + Math.PI / 2) * 34;
-    this.y = car.y + Math.sin(car.angle + Math.PI / 2) * 34;
-    this.vehicle = null;
+    player.vehicle = null;
+    player.x = car.x + Math.cos(car.angle + Math.PI / 2) * 26;
+    player.y = car.y + Math.sin(car.angle + Math.PI / 2) * 26;
+    return "exited";
   }
+  const car = nearestVehicle(player, vehicles);
+  if (car) {
+    car.driver = player;
+    player.vehicle = car;
+    return "entered";
+  }
+  return null;
+}
 
-  damage(amount) {
-    this.health = Math.max(0, this.health - amount);
-    if (this.health <= 0) this.alive = false;
-  }
-
-  heal(amount) {
-    this.health = Math.min(this.maxHealth, this.health + amount);
-  }
-
-  respawn(x, y) {
-    this.x = x;
-    this.y = y;
-    this.health = this.maxHealth;
-    this.alive = true;
-    this.vehicle = null;
-  }
+export function damagePlayer(player, amount) {
+  player.health = Math.max(0, player.health - amount);
+  return player.health <= 0;
 }

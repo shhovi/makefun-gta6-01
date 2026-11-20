@@ -1,220 +1,222 @@
-// Solar Bay: Outlaw — main game loop and wiring. requestAnimationFrame, menu state machine.
-// States: title → playing ⇄ paused, plus busted/wasted end screens with respawn.
-import { DEFAULT_SEED, TILE } from "./config.js";
-import { Random } from "./random.js";
+// Solar Bay: Outlaw — game loop and menu state machine (title/playing/paused/busted/wasted).
+// Wires every module together: city, player, traffic, peds, police,
+// combat, missions, HUD, audio, saves and screenshot mode.
+
+import { DEFAULT_SEED, CAR_MAX_SPEED, COLORS } from "./config.js";
+import { makeRng } from "./random.js";
 import { generateCity } from "./city.js";
-import { drawCity, drawPerson, drawCar, drawMarker } from "./render.js";
+import { drawWorld, drawCar, drawPerson, drawMarker, cameraFor } from "./render.js";
 import { Input } from "./input.js";
-import { Player } from "./player.js";
-import { spawnParkedCars } from "./vehicles.js";
-import { spawnTraffic } from "./traffic.js";
-import { spawnPedestrians } from "./pedestrians.js";
-import { WantedSystem } from "./police.js";
-import { Combat } from "./combat.js";
-import { MissionChain } from "./missions.js";
-import { HUD } from "./hud.js";
-import { SynthAudio } from "./audio.js";
-import { saveGame, loadGame } from "./save.js";
-import { getShotSceneFromURL, loadShotScene, applyShotScene, renderShotFrame } from "./shots.js";
+import { createPlayer, updatePlayer, toggleVehicle } from "./player.js";
+import { driveVehicle, createVehicle } from "./vehicles.js";
+import { spawnTraffic, updateTraffic } from "./traffic.js";
+import { spawnPedestrians, updatePedestrians } from "./pedestrians.js";
+import { createWanted, updateWanted, spawnPolice, updatePolice, checkOutcome } from "./police.js";
+import { punch, shoot } from "./combat.js";
+import { createMissionState, currentMission, updateMissions } from "./missions.js";
+import { updateHud, drawMinimap } from "./hud.js";
+import { GameAudio } from "./audio.js";
+import { saveGame, loadGame, applySave } from "./save.js";
+import { loadShots, shotFromUrl, findScene, applyScene } from "./shots.js";
 
-const canvas = document.getElementById("game-canvas");
+const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
+const minimap = document.getElementById("minimap");
+const minimapCtx = minimap.getContext("2d");
 
-function resize() {
-  canvas.width = window.innerWidth;
-  canvas.height = window.innerHeight;
+const els = {
+  wanted: document.getElementById("wanted"),
+  health: document.getElementById("health"),
+  money: document.getElementById("money"),
+  objective: document.getElementById("objective"),
+  dialog: document.getElementById("dialog"),
+};
+
+const screens = {
+  title: document.getElementById("title"),
+  pause: document.getElementById("pause"),
+  busted: document.getElementById("busted"),
+  wasted: document.getElementById("wasted"),
+};
+
+function showScreen(name) {
+  for (const [key, el] of Object.entries(screens)) {
+    el.classList.toggle("visible", key === name);
+  }
 }
-window.addEventListener("resize", resize);
-resize();
 
-class Game {
-  constructor() {
-    this.seed = DEFAULT_SEED;
-    this.state = "title"; // title | playing | paused | busted | wasted
-    this.time = 0;
-    this.timeOfDay = "day";
-    this.shotMode = false;
-    this.fixedTime = null;
-    this.input = new Input(canvas);
-    this.audio = new SynthAudio();
-    this.hud = new HUD();
-    this.reset(loadGame());
-    this.bindMenus();
+const state = {
+  mode: "title", // title | playing | paused | busted | wasted
+  seed: DEFAULT_SEED,
+  timeOfDay: "day",
+  city: null,
+  rng: null,
+  player: null,
+  traffic: [],
+  peds: [],
+  police: [],
+  wanted: createWanted(),
+  missionState: createMissionState(),
+  shot: null,
+  saveTimer: 0,
+};
+
+const input = new Input(canvas);
+const audio = new GameAudio();
+
+function newGame(seed, scene) {
+  state.seed = seed;
+  state.rng = makeRng(seed);
+  state.city = generateCity(seed);
+  state.player = createPlayer(640, 360);
+  state.wanted = createWanted();
+  state.missionState = createMissionState();
+  state.missionState.dialogTimer = 8;
+  state.traffic = spawnTraffic(state.city, state.rng, 14);
+  state.peds = spawnPedestrians(state.city, state.rng, 22);
+  state.police = [];
+  state.shot = null;
+  state.timeOfDay = "day";
+
+  if (scene) {
+    applyScene(state, scene);
+    if (scene.player.inVehicle) {
+      const car = createVehicle(state.player.x, state.player.y, 0, state.rng.pick(COLORS.car));
+      car.driver = state.player;
+      state.player.vehicle = car;
+      state.traffic.push(car);
+    }
+    if (state.wanted.level > 0) {
+      state.police = spawnPolice(state.city, state.rng, state.wanted.level);
+    }
+  } else {
+    const saved = loadGame();
+    if (saved) applySave(state, saved);
+  }
+}
+
+function startPlaying() {
+  state.mode = "playing";
+  showScreen(null);
+  audio.ensure();
+}
+
+function endGame(outcome) {
+  state.mode = outcome;
+  showScreen(outcome);
+  audio.setEngine(false);
+  audio.setSiren(false, 0);
+}
+
+function step(dt, timeMs) {
+  const player = state.player;
+
+  if (input.wasPressed("e")) {
+    toggleVehicle(player, [...state.traffic, ...state.police]);
+  }
+  if (input.wasPressed("f")) {
+    punch(player, state.peds, state.wanted, audio);
   }
 
-  reset(save) {
-    if (save?.seed) this.seed = save.seed;
-    this.rng = new Random(this.seed);
-    this.city = generateCity(this.seed);
-    const spawn = save && save.x ? { x: save.x, y: save.y } : { x: 5 * TILE + 24, y: 5 * TILE + 24 };
-    this.player = new Player(spawn.x, spawn.y);
-    if (save) {
-      this.player.money = save.money ?? 0;
-      this.player.health = save.health ?? 100;
-    }
-    this.parkedCars = spawnParkedCars(this.city, this.rng, 24);
-    this.trafficCars = spawnTraffic(this.city, this.rng, 14);
-    this.peds = spawnPedestrians(this.city, this.rng, 30);
-    this.wanted = new WantedSystem();
-    this.combat = new Combat();
-    this.missions = new MissionChain(save?.missionIndex ?? 0);
-    this.camera = { x: 0, y: 0, w: canvas.width, h: canvas.height };
+  updatePlayer(player, input, state.city, dt);
+  if (player.vehicle) {
+    driveVehicle(player.vehicle, input, state.city, dt);
+    audio.setEngine(true, player.vehicle.speed / CAR_MAX_SPEED);
+  } else {
+    audio.setEngine(false);
   }
 
-  bindMenus() {
-    const show = (id) => {
-      for (const el of document.querySelectorAll(".menu-screen")) el.classList.remove("active");
-      if (id) document.getElementById(id)?.classList.add("active");
-    };
-    this._showMenu = show;
-    document.getElementById("btn-start")?.addEventListener("click", () => {
-      this.audio.ensure();
-      this.state = "playing";
-      show(null);
-    });
-    document.getElementById("btn-resume")?.addEventListener("click", () => {
-      this.state = "playing";
-      show(null);
-    });
-    const respawn = () => {
-      this.wanted.clear();
-      this.player.respawn(5 * TILE + 24, 5 * TILE + 24);
-      this.state = "playing";
-      show(null);
-    };
-    document.getElementById("btn-busted-restart")?.addEventListener("click", respawn);
-    document.getElementById("btn-wasted-restart")?.addEventListener("click", respawn);
+  if (input.mouse.clicked) {
+    const cam = cameraFor(player, canvas.width, canvas.height);
+    shoot(player, input.mouse.x + cam.x, input.mouse.y + cam.y, state.peds, state.traffic, state.wanted, audio);
   }
 
-  get allCars() {
-    return [...this.parkedCars, ...this.trafficCars, ...this.wanted.policeCars];
+  updateTraffic(state.traffic, state.city, state.rng, dt);
+  updatePedestrians(state.peds, state.rng, dt);
+
+  const wantedBefore = state.wanted.level;
+  updateWanted(state.wanted, dt, state.police.length > 0 && state.wanted.level > 0);
+  if (state.wanted.level !== wantedBefore || (state.wanted.level > 0 && state.police.length === 0)) {
+    state.police = state.wanted.level > 0 ? spawnPolice(state.city, state.rng, state.wanted.level) : [];
   }
+  const nearestPolice = state.police.length ? updatePolice(state.police, player, state.city, dt, timeMs) : Infinity;
+  audio.setSiren(state.police.length > 0, timeMs);
 
-  step(dt, silent = false) {
-    this.time += dt;
-    const input = this.input;
-    const player = this.player;
+  const missionEvent = updateMissions(state.missionState, player, state.wanted, dt);
+  if (missionEvent) audio.pickup();
 
-    const aimAngle = Math.atan2(
-      input.mouseY + this.camera.y - player.y,
-      input.mouseX + this.camera.x - player.x
-    );
+  const outcome = checkOutcome(state.wanted, player, nearestPolice, dt);
+  if (outcome) endGame(outcome);
 
-    if (input.enterCar) {
-      if (player.inVehicle) {
-        player.exitVehicle();
-        this.audio.stopEngine();
-      } else {
-        const car = player.tryEnterVehicle(this.allCars.filter((c) => !c.isPolice));
-        if (car) {
-          this.audio.startEngine();
-          this.wanted.addCrime(0.3); // carjacking is a crime
-        }
-      }
-    }
-
-    if (player.inVehicle) {
-      player.vehicle.updateDriven(dt, input, this.city);
-      this.audio.setEngineSpeed(player.vehicle.speed);
-    } else {
-      player.updateOnFoot(dt, input, this.city, aimAngle);
-      if (input.punch) this.combat.punch(player, this.peds, this.wanted, this.audio);
-      if (input.mouseDown) this.combat.shoot(player, aimAngle, this.peds, this.allCars, this.wanted, this.audio);
-    }
-
-    for (const car of this.trafficCars) car.update(dt, this.city, this.allCars);
-    for (const ped of this.peds) ped.update(dt, this.city);
-    this.combat.update(dt);
-
-    const bustResult = this.wanted.update(dt, player, this.city, this.rng);
-    if (this.wanted.stars > 0) this.audio.startSiren();
-    else this.audio.stopSiren();
-
-    if (!silent) {
-      if (bustResult === "busted") {
-        this.state = "busted";
-        this._showMenu("menu-busted");
-        this.audio.stopSiren();
-        this.audio.stopEngine();
-      }
-      if (!player.alive) {
-        this.state = "wasted";
-        this._showMenu("menu-wasted");
-        this.audio.stopSiren();
-        this.audio.stopEngine();
-      }
-    }
-
-    const done = this.missions.update(player, this.wanted, this.city);
-    if (done && !silent) {
-      this.audio.missionComplete();
-      saveGame({ missionIndex: this.missions.index, money: player.money, x: player.x, y: player.y, health: player.health, seed: this.seed });
-    }
-
-    this.camera.w = canvas.width;
-    this.camera.h = canvas.height;
-    this.camera.x = Math.max(0, Math.min(player.x - this.camera.w / 2, this.city.grid[0].length * TILE - this.camera.w));
-    this.camera.y = Math.max(0, Math.min(player.y - this.camera.h / 2, this.city.grid.length * TILE - this.camera.h));
-
-    input.endFrame();
+  state.saveTimer += dt;
+  if (state.saveTimer > 5) {
+    state.saveTimer = 0;
+    saveGame(state);
   }
+}
 
-  draw() {
-    const time = this.fixedTime ?? this.time;
-    ctx.fillStyle = this.timeOfDay === "dusk" ? "#2a2438" : "#1d4e79";
+function render(timeMs) {
+  const player = state.player;
+  const cam = cameraFor(player, canvas.width, canvas.height);
+  drawWorld(ctx, state.city, cam, canvas.width, canvas.height);
+
+  const mission = currentMission(state.missionState);
+  if (mission) drawMarker(ctx, mission.marker.x, mission.marker.y, cam);
+
+  for (const car of state.traffic) drawCar(ctx, car, cam);
+  for (const car of state.police) drawCar(ctx, car, cam);
+  for (const ped of state.peds) {
+    if (ped.health > 0) drawPerson(ctx, ped, cam, ped.color);
+  }
+  if (!player.vehicle) drawPerson(ctx, player, cam, COLORS.player);
+
+  if (state.timeOfDay === "dusk") {
+    ctx.fillStyle = "rgba(255,140,60,.14)";
     ctx.fillRect(0, 0, canvas.width, canvas.height);
-    drawCity(ctx, this.city, this.camera);
-
-    const marker = this.missions.markerFor(this.city);
-    if (marker) drawMarker(ctx, marker.x, marker.y, this.camera, time);
-
-    for (const car of this.allCars) drawCar(ctx, car, this.camera);
-    for (const ped of this.peds) {
-      if (ped.alive) drawPerson(ctx, ped.x - this.camera.x, ped.y - this.camera.y, ped.angle, ped.color, ped.radius);
-    }
-    if (!this.player.inVehicle) {
-      drawPerson(ctx, this.player.x - this.camera.x, this.player.y - this.camera.y, this.player.angle, this.player.color, this.player.radius);
-    }
-    this.combat.drawTracers(ctx, this.camera);
-
-    if (this.timeOfDay === "dusk") {
-      ctx.fillStyle = "rgba(40,20,60,0.25)";
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-    }
-
-    this.hud.update(this.player, this.wanted, this.missions, this.city, marker);
   }
 
-  frame(now) {
-    const dt = Math.min(0.05, (now - (this._last ?? now)) / 1000);
-    this._last = now;
-    if (this.input.pause && this.state === "playing") {
-      this.state = "paused";
-      this._showMenu("menu-pause");
-    }
-    if (this.state === "playing") this.step(dt);
-    this.draw();
-    requestAnimationFrame((t) => this.frame(t));
-  }
+  updateHud(els, player, state.wanted, mission, state.missionState);
+  drawMinimap(minimapCtx, state.city, player, mission, state.police, 160);
+  void timeMs;
 }
 
-const game = new Game();
-window.__solarBay = game;
+let last = performance.now();
+function frame(now) {
+  const dt = Math.min(0.05, (now - last) / 1000);
+  last = now;
 
-(async () => {
-  const shotName = getShotSceneFromURL();
-  if (shotName) {
-    const scene = await loadShotScene(shotName);
-    if (scene) {
-      game.reset(null);
-      game.seed = scene.seed;
-      game.reset({ seed: scene.seed });
-      applyShotScene(scene, game);
-      game.state = "playing";
-      game._showMenu(null);
-      renderShotFrame(game);
-      return;
+  if (state.mode === "playing") {
+    if (input.wasPressed("p") || input.wasPressed("escape")) {
+      state.mode = "paused";
+      showScreen("pause");
+    } else {
+      step(dt, now);
     }
+  } else if (state.mode === "paused") {
+    if (input.wasPressed("p") || input.wasPressed("escape")) startPlaying();
   }
-  requestAnimationFrame((t) => game.frame(t));
+
+  if (state.city) render(now);
+  input.endFrame();
+  requestAnimationFrame(frame);
+}
+
+document.getElementById("startBtn").addEventListener("click", startPlaying);
+document.getElementById("resumeBtn").addEventListener("click", startPlaying);
+document.getElementById("bustedBtn").addEventListener("click", () => { newGame(state.seed, null); startPlaying(); });
+document.getElementById("wastedBtn").addEventListener("click", () => { newGame(state.seed, null); startPlaying(); });
+
+// Boot: deterministic screenshot mode if ?shot= is present.
+(async () => {
+  const shotName = shotFromUrl();
+  if (shotName) {
+    const scenes = await loadShots();
+    const scene = findScene(scenes, shotName);
+    newGame(scene?.seed ?? DEFAULT_SEED, scene);
+    startPlaying();
+  } else {
+    newGame(DEFAULT_SEED, null);
+    showScreen("title");
+  }
+  requestAnimationFrame(frame);
 })();

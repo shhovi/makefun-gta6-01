@@ -1,69 +1,73 @@
-// Police & wanted system: stars, chase cars, busted (stopped + surrounded), wasted on death.
-// More stars spawn more cruisers; heat decays when no cruiser is active.
-import { POLICE_SPEED } from "./config.js";
-import { Car } from "./vehicles.js";
+// Wanted stars, police chase, and the busted / wasted outcomes.
+// Heat decays only while no police unit is close — break line of sight.
 
-export class WantedSystem {
-  constructor() {
-    this.stars = 0;
-    this.heat = 0;
-    this.bustedTimer = 0;
-    this.policeCars = [];
+import { MAX_WANTED, WANTED_DECAY_SECONDS, POLICE_SPEED, COLORS } from "./config.js";
+import { randomRoadPoint } from "./city.js";
+import { createVehicle, stepVehicle } from "./vehicles.js";
+
+export function createWanted() {
+  return { level: 0, heat: 0, decayTimer: 0, bustTimer: 0 };
+}
+
+export function addCrime(wanted, amount) {
+  wanted.heat = Math.min(100, wanted.heat + amount);
+  wanted.level = Math.min(MAX_WANTED, Math.floor(wanted.heat / 20) + (wanted.heat > 0 ? 1 : 0));
+  if (wanted.heat <= 0) wanted.level = 0;
+  wanted.decayTimer = 0;
+}
+
+export function updateWanted(wanted, dt, policeNearby) {
+  if (wanted.level === 0) return;
+  if (policeNearby) {
+    wanted.decayTimer = 0;
+    return;
   }
-
-  addCrime(amount) {
-    this.heat = Math.min(5, this.heat + amount);
-    this.stars = Math.ceil(this.heat);
+  wanted.decayTimer += dt;
+  if (wanted.decayTimer >= WANTED_DECAY_SECONDS) {
+    wanted.heat = Math.max(0, wanted.heat - 20);
+    wanted.level = wanted.heat > 0 ? Math.max(1, wanted.level - 1) : 0;
+    wanted.decayTimer = 0;
   }
+}
 
-  clear() {
-    this.stars = 0;
-    this.heat = 0;
-    this.bustedTimer = 0;
-    this.policeCars = [];
+export function spawnPolice(city, rng, wantedLevel) {
+  const cars = [];
+  const count = wantedLevel; // one unit per star, roughly
+  for (let i = 0; i < count; i++) {
+    const p = randomRoadPoint(city, rng);
+    const car = createVehicle(p.x, p.y, 0, COLORS.police, { police: true });
+    car.speed = POLICE_SPEED * 0.6;
+    cars.push(car);
   }
+  return cars;
+}
 
-  update(dt, player, city, rng) {
-    // Heat decays slowly when no police can see the player.
-    if (this.stars > 0 && this.policeCars.length === 0) {
-      this.heat = Math.max(0, this.heat - dt * 0.05);
-      this.stars = Math.ceil(this.heat);
-    }
-
-    // Spawn police to match star level.
-    const desired = this.stars === 0 ? 0 : 1 + this.stars;
-    while (this.policeCars.length < desired && city.roadTiles.length > 0) {
-      const t = rng.pick(city.roadTiles);
-      const car = new Car(t.tx * 48 + 24, t.ty * 48 + 24, 0, "#f4f4f4", { isPolice: true });
-      car.sirenOn = true;
-      this.policeCars.push(car);
-    }
-    if (this.stars === 0) this.policeCars = [];
-
-    // Chase: steer toward the player.
-    let nearbyStopped = 0;
-    const playerSpeed = player.vehicle ? Math.abs(player.vehicle.speed) : 0;
-    for (const cop of this.policeCars) {
-      const dx = player.x - cop.x;
-      const dy = player.y - cop.y;
-      const dist = Math.hypot(dx, dy);
-      const targetAngle = Math.atan2(dy, dx);
-      let diff = targetAngle - cop.angle;
-      while (diff > Math.PI) diff -= Math.PI * 2;
-      while (diff < -Math.PI) diff += Math.PI * 2;
-      cop.angle += Math.max(-2.8 * dt, Math.min(2.8 * dt, diff));
-      cop.speed = dist > 60 ? POLICE_SPEED : POLICE_SPEED * 0.4;
-      cop.x += Math.cos(cop.angle) * cop.speed * dt;
-      cop.y += Math.sin(cop.angle) * cop.speed * dt;
-      if (dist < 70 && playerSpeed < 15) nearbyStopped++;
-    }
-
-    // Busted: player stopped and surrounded for 2 seconds.
-    if (nearbyStopped >= 2 && playerSpeed < 15) {
-      this.bustedTimer += dt;
-    } else {
-      this.bustedTimer = Math.max(0, this.bustedTimer - dt);
-    }
-    return this.bustedTimer >= 2 ? "busted" : null;
+export function updatePolice(cars, player, city, dt, timeMs) {
+  let nearest = Infinity;
+  for (const car of cars) {
+    car.sirenOn = Math.floor(timeMs / 250) % 2 === 0;
+    const dx = player.x - car.x;
+    const dy = player.y - car.y;
+    const dist = Math.hypot(dx, dy);
+    nearest = Math.min(nearest, dist);
+    car.angle = Math.atan2(dy, dx);
+    car.speed = Math.min(POLICE_SPEED, car.speed + 260 * dt);
+    stepVehicle(car, city, dt);
   }
+  return nearest;
+}
+
+// Returns "busted", "wasted", or null.
+export function checkOutcome(wanted, player, nearestPoliceDist, dt) {
+  if (player.health <= 0) return "wasted";
+  if (wanted.level > 0 && nearestPoliceDist < 34 && !player.vehicle) {
+    wanted.bustTimer += dt;
+    if (wanted.bustTimer > 1.6) return "busted";
+  } else if (wanted.level > 0 && nearestPoliceDist < 30 && player.vehicle && Math.abs(player.vehicle.speed) < 12) {
+    wanted.bustTimer += dt;
+    if (wanted.bustTimer > 1.6) return "busted";
+  } else {
+    wanted.bustTimer = Math.max(0, wanted.bustTimer - dt);
+  }
+  return null;
 }
