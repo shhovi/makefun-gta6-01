@@ -5,13 +5,31 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Solar Bay: Outlaw</title>
 <style>
-  html,body{margin:0;padding:0;background:#0b1c2c;overflow:hidden;height:100%}
-  #wrap{display:flex;align-items:center;justify-content:center;height:100vh}
-  canvas{display:block;background:#79b5d8;box-shadow:0 0 40px rgba(0,0,0,.6)}
+  html, body {
+    margin: 0;
+    padding: 0;
+    background: #0b1c2c;
+    overflow: hidden;
+    height: 100%;
+  }
+  #wrap {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+  }
+  canvas {
+    display: block;
+    background: #79b5d8;
+    box-shadow: 0 0 40px rgba(0,0,0,.6);
+  }
 </style>
 </head>
 <body>
-<div id="wrap"><canvas id="game" width="1280" height="720"></canvas></div>
+<!-- Solar Bay: Outlaw — canvas shell -->
+<div id="wrap">
+  <canvas id="game" width="1280" height="720"></canvas>
+</div>
 <script type="module" src="./src/main.js"></script>
 </body>
 </html>

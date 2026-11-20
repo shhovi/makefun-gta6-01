@@ -1,9 +1,36 @@
+// Local persistence for progress between sessions.
 const KEY = 'solarbay_outlaw_save_v1';
+
 export function saveGame(data) {
-  try { localStorage.setItem(KEY, JSON.stringify(data)); return true; } catch { return false; }
+  try {
+    localStorage.setItem(KEY, JSON.stringify(data));
+    return true;
+  } catch {
+    return false;
+  }
 }
+
 export function loadGame() {
-  try { const s = localStorage.getItem(KEY); return s ? JSON.parse(s) : null; } catch { return null; }
+  try {
+    const raw = localStorage.getItem(KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
 }
-export function hasSave() { try { return !!localStorage.getItem(KEY); } catch { return false; } }
-export function clearSave() { try { localStorage.removeItem(KEY); } catch {} }
+
+export function hasSave() {
+  try {
+    return localStorage.getItem(KEY) !== null;
+  } catch {
+    return false;
+  }
+}
+
+export function clearSave() {
+  try {
+    localStorage.removeItem(KEY);
+  } catch {
+    // Ignore storage errors; saving is best-effort.
+  }
+}
