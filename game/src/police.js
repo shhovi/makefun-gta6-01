@@ -1,91 +1,69 @@
-import { Vehicle } from './vehicles.js';
-
-// Pursuit cars and the wanted-star heat model.
-export class PoliceCar extends Vehicle {
-  constructor(x, y) {
-    super(x, y, 0, { isPolice: true, color: '#ffffff', hasDriver: true });
-    this.lightPhase = Math.random() * 6;
-  }
-
-  updateAI(dt, city, player) {
-    if (this.wrecked) return;
-    this.lightPhase += dt * 10;
-
-    let tx = player.x;
-    let ty = player.y;
-    if (player.inCar) {
-      tx += Math.cos(player.inCar.angle) * player.inCar.speed * 0.35;
-      ty += Math.sin(player.inCar.angle) * player.inCar.speed * 0.35;
-    }
-
-    const want = Math.atan2(ty - this.y, tx - this.x);
-    let diff = want - this.angle;
-    while (diff > Math.PI) diff -= Math.PI * 2;
-    while (diff < -Math.PI) diff += Math.PI * 2;
-    const turn = Math.max(-2.4 * dt, Math.min(2.4 * dt, diff * 3 * dt));
-    this.angle += turn;
-
-    const dist = Math.hypot(tx - this.x, ty - this.y);
-    const cruise = dist > 320 ? 430 : dist > 90 ? 340 : 180;
-    this.speed += (cruise - this.speed) * Math.min(1, dt * 1.8);
-
-    const nx = this.x + Math.cos(this.angle) * this.speed * dt;
-    const ny = this.y + Math.sin(this.angle) * this.speed * dt;
-    if (!city.collides(nx, ny, 20)) {
-      this.x = nx;
-      this.y = ny;
-    } else {
-      if (Math.abs(this.speed) > 160) {
-        this.health -= 10;
-      }
-      this.speed *= 0.35;
-      this.angle += 0.6 * dt * 4;
-    }
-
-    if (this.health < 45) {
-      this.smoke = Math.min(1, this.smoke + dt * 0.5);
-    }
-    if (this.health <= 0) {
-      this.health = 0;
-      this.wrecked = true;
-    }
-  }
-}
+// Police & wanted system: stars, chase cars, busted (stopped + surrounded), wasted on death.
+// More stars spawn more cruisers; heat decays when no cruiser is active.
+import { POLICE_SPEED } from "./config.js";
+import { Car } from "./vehicles.js";
 
 export class WantedSystem {
   constructor() {
     this.stars = 0;
     this.heat = 0;
-    this.lastSeen = 0;
     this.bustedTimer = 0;
+    this.policeCars = [];
   }
 
   addCrime(amount) {
     this.heat = Math.min(5, this.heat + amount);
-    this.stars = Math.max(1, Math.ceil(this.heat));
-    this.lastSeen = 0;
-  }
-
-  update(dt, seenByPolice) {
-    if (seenByPolice) {
-      this.lastSeen = 0;
-    } else {
-      this.lastSeen += dt;
-    }
-    if (this.lastSeen > 7 && this.heat > 0) {
-      this.heat = Math.max(0, this.heat - dt * 0.14);
-      this.stars = Math.ceil(this.heat);
-      if (this.heat <= 0.01) {
-        this.heat = 0;
-        this.stars = 0;
-      }
-    }
+    this.stars = Math.ceil(this.heat);
   }
 
   clear() {
     this.stars = 0;
     this.heat = 0;
     this.bustedTimer = 0;
-    this.lastSeen = 0;
+    this.policeCars = [];
+  }
+
+  update(dt, player, city, rng) {
+    // Heat decays slowly when no police can see the player.
+    if (this.stars > 0 && this.policeCars.length === 0) {
+      this.heat = Math.max(0, this.heat - dt * 0.05);
+      this.stars = Math.ceil(this.heat);
+    }
+
+    // Spawn police to match star level.
+    const desired = this.stars === 0 ? 0 : 1 + this.stars;
+    while (this.policeCars.length < desired && city.roadTiles.length > 0) {
+      const t = rng.pick(city.roadTiles);
+      const car = new Car(t.tx * 48 + 24, t.ty * 48 + 24, 0, "#f4f4f4", { isPolice: true });
+      car.sirenOn = true;
+      this.policeCars.push(car);
+    }
+    if (this.stars === 0) this.policeCars = [];
+
+    // Chase: steer toward the player.
+    let nearbyStopped = 0;
+    const playerSpeed = player.vehicle ? Math.abs(player.vehicle.speed) : 0;
+    for (const cop of this.policeCars) {
+      const dx = player.x - cop.x;
+      const dy = player.y - cop.y;
+      const dist = Math.hypot(dx, dy);
+      const targetAngle = Math.atan2(dy, dx);
+      let diff = targetAngle - cop.angle;
+      while (diff > Math.PI) diff -= Math.PI * 2;
+      while (diff < -Math.PI) diff += Math.PI * 2;
+      cop.angle += Math.max(-2.8 * dt, Math.min(2.8 * dt, diff));
+      cop.speed = dist > 60 ? POLICE_SPEED : POLICE_SPEED * 0.4;
+      cop.x += Math.cos(cop.angle) * cop.speed * dt;
+      cop.y += Math.sin(cop.angle) * cop.speed * dt;
+      if (dist < 70 && playerSpeed < 15) nearbyStopped++;
+    }
+
+    // Busted: player stopped and surrounded for 2 seconds.
+    if (nearbyStopped >= 2 && playerSpeed < 15) {
+      this.bustedTimer += dt;
+    } else {
+      this.bustedTimer = Math.max(0, this.bustedTimer - dt);
+    }
+    return this.bustedTimer >= 2 ? "busted" : null;
   }
 }

@@ -1,87 +1,50 @@
-import { createReadStream, statSync } from 'node:fs';
-import { createServer } from 'node:http';
-import { extname, join, normalize, resolve, sep } from 'node:path';
-import { fileURLToPath } from 'node:url';
+// Minimal Deno static file server for Solar Bay: Outlaw.
+// Serves the ./game directory with correct MIME types, no external dependencies.
+// Usage: imported by main.ts; call serveStatic({ port: 8000, root: "./game" }).
 
-// Minimal static file server for local play.
-const here = join(fileURLToPath(import.meta.url), '..');
-const root = resolve(join(here, 'game'));
-
-const MIME: Record<string, string> = {
-  '.html': 'text/html; charset=utf-8',
-  '.js': 'text/javascript; charset=utf-8',
-  '.mjs': 'text/javascript; charset=utf-8',
-  '.css': 'text/css; charset=utf-8',
-  '.json': 'application/json; charset=utf-8',
-  '.png': 'image/png',
-  '.jpg': 'image/jpeg',
-  '.jpeg': 'image/jpeg',
-  '.gif': 'image/gif',
-  '.webp': 'image/webp',
-  '.svg': 'image/svg+xml',
-  '.ico': 'image/x-icon',
-  '.txt': 'text/plain; charset=utf-8',
+const MIME_TYPES: Record<string, string> = {
+  ".html": "text/html; charset=utf-8",
+  ".js": "text/javascript; charset=utf-8",
+  ".css": "text/css; charset=utf-8",
+  ".json": "application/json; charset=utf-8",
+  ".png": "image/png",
+  ".jpg": "image/jpeg",
+  ".svg": "image/svg+xml",
 };
 
-function parsePort(argv: string[]): number {
-  const idx = argv.indexOf('--port');
-  if (idx >= 0 && idx + 1 < argv.length) {
-    const value = Number(argv[idx + 1]);
-    if (Number.isInteger(value) && value >= 1 && value <= 65535) {
-      return value;
-    }
-  }
-  return 8080;
+function mimeFor(path: string): string {
+  const dot = path.lastIndexOf(".");
+  if (dot === -1) return "application/octet-stream";
+  return MIME_TYPES[path.slice(dot).toLowerCase()] ?? "application/octet-stream";
 }
 
-const port = parsePort(process.argv);
+export interface ServeOptions {
+  port?: number;
+  root?: string;
+}
 
-const server = createServer((req, res) => {
-  const url = new URL(req.url || '/', 'http://127.0.0.1');
-  let pathname: string;
-  try {
-    pathname = decodeURIComponent(url.pathname);
-  } catch {
-    res.writeHead(400, { 'content-type': 'text/plain; charset=utf-8' });
-    res.end('bad request');
-    return;
-  }
+export function serveStatic(options: ServeOptions = {}): void {
+  const port = options.port ?? 8000;
+  const root = options.root ?? "./game";
 
-  if (pathname.endsWith('/')) {
-    pathname += 'index.html';
-  }
+  Deno.serve({ port }, async (request: Request): Promise<Response> => {
+    const url = new URL(request.url);
+    let pathname = decodeURIComponent(url.pathname);
+    if (pathname === "/") pathname = "/index.html";
 
-  const file = resolve(join(root, normalize(pathname)));
-  if (file !== root && !file.startsWith(root + sep)) {
-    res.writeHead(403, { 'content-type': 'text/plain; charset=utf-8' });
-    res.end('forbidden');
-    return;
-  }
-
-  let size: number;
-  try {
-    const info = statSync(file);
-    if (!info.isFile()) {
-      res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
-      res.end('not found');
-      return;
+    // Prevent directory traversal.
+    if (pathname.includes("..")) {
+      return new Response("Bad Request", { status: 400 });
     }
-    size = info.size;
-  } catch {
-    res.writeHead(404, { 'content-type': 'text/plain; charset=utf-8' });
-    res.end('not found');
-    return;
-  }
 
-  const type = MIME[extname(file).toLowerCase()] || 'application/octet-stream';
-  res.writeHead(200, {
-    'content-type': type,
-    'content-length': String(size),
-    'cache-control': 'no-store',
+    const filePath = `${root}${pathname}`;
+    try {
+      const data = await Deno.readFile(filePath);
+      return new Response(data, {
+        headers: { "Content-Type": mimeFor(pathname) },
+      });
+    } catch {
+      return new Response("404 Not Found", { status: 404 });
+    }
   });
-  createReadStream(file).pipe(res);
-});
-
-server.listen(port, '127.0.0.1', () => {
-  console.log(`game/ is on http://localhost:${port}`);
-});
+}

@@ -1,3 +1,5 @@
-# local dossier output
-out/
-out2/
+node_modules/
+.DS_Store
+*.log
+screenshots/*.tmp
+deno.lock

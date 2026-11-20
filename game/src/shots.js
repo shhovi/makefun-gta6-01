@@ -1,126 +1,38 @@
-// Deterministic staging for marketing screenshots.
-export function getShotParams() {
-  const q = new URLSearchParams(window.location.search);
-  const shot = q.get('shot');
-  const seed = parseInt(q.get('seed') || '1', 10) || 1;
-  return shot ? { shot, seed } : null;
+// Deterministic screenshot mode: reads a shots.json scene, fixes seed/time, renders one frame.
+// Open with ?shot=<scene-name>, e.g. index.html?shot=chase
+export function getShotSceneFromURL() {
+  const params = new URLSearchParams(window.location.search);
+  if (!params.has("shot")) return null;
+  return params.get("shot");
 }
 
-export function setupShot(game, name) {
-  const g = game;
-  g.state = 'play';
-
-  if (name === 'city') {
-    g.player.x = 700;
-    g.player.y = 700;
-    g.player.angle = 0.6;
-    g.player.hasPistol = true;
-    g.player.ammo = 24;
-    g.player.cash = 1850;
-    g.missions.startNext(g);
-    if (g.traffic[0]) {
-      g.traffic[0].x = 820;
-      g.traffic[0].y = 700;
-      g.traffic[0].angle = 0;
-    }
-    if (g.parked[0]) {
-      g.parked[0].x = 640;
-      g.parked[0].y = 780;
-      g.parked[0].angle = 0.3;
-    }
-    for (let i = 0; i < 6 && i < g.peds.length; i++) {
-      g.peds[i].x = 650 + i * 38;
-      g.peds[i].y = 640 + (i % 3) * 30;
-      g.peds[i].down = false;
-    }
-    g.briefTimer = 999;
-  } else if (name === 'drive') {
-    const car = g.parked[0] || g.traffic[0];
-    const rp = g.city.nearestRoadPoint(1100, 1000);
-    if (car) {
-      car.x = rp ? rp.x : 1100;
-      car.y = rp ? rp.y : 1000;
-      car.angle = 0;
-      car.speed = 320;
-      car.health = 88;
-      car.wrecked = false;
-      g.player.inCar = car;
-      g.player.x = car.x;
-      g.player.y = car.y;
-    }
-    g.player.cash = 2400;
-    g.missions.index = 1;
-    g.missions.startNext(g);
-    g.briefTimer = 0;
-    g.shotCar = car;
-    g.shotSpeed = 320;
-  } else if (name === 'chase') {
-    const car = g.parked[1] || g.parked[0];
-    const rp = g.city.nearestRoadPoint(1500, 1300);
-    if (car) {
-      car.x = rp ? rp.x : 1500;
-      car.y = rp ? rp.y : 1300;
-      car.angle = 0;
-      car.speed = 340;
-      car.health = 62;
-      car.wrecked = false;
-      g.player.inCar = car;
-      g.player.x = car.x;
-      g.player.y = car.y;
-    }
-    g.player.cash = 3100;
-    g.player.health = 78;
-    g.wanted.heat = 3;
-    g.wanted.stars = 3;
-    g.missions.index = 3;
-    g.missions.startNext(g);
-    g.briefTimer = 999;
-    g.spawnPolice(3);
-    for (let i = 0; i < g.police.length && car; i++) {
-      g.police[i].x = car.x - 130 - i * 65;
-      g.police[i].y = car.y + (i - 1) * 55;
-      g.police[i].angle = car.angle;
-      g.police[i].speed = 330;
-    }
-    g.shake = 2;
-    g.shotCar = car;
-    g.shotSpeed = 340;
-  } else if (name === 'mission') {
-    g.player.x = 620;
-    g.player.y = 620;
-    g.player.angle = 2.2;
-    g.player.hasPistol = true;
-    g.player.ammo = 18;
-    g.player.cash = 2750;
-    g.missions.index = 2;
-    g.missions.startNext(g);
-    g.briefTimer = 999;
-    if (g.missions.packages[0]) {
-      g.missions.packages[0].x = 720;
-      g.missions.packages[0].y = 700;
-    }
-    if (g.traffic[1]) {
-      g.traffic[1].x = 760;
-      g.traffic[1].y = 620;
-    }
-  } else {
-    g.missions.startNext(g);
+export async function loadShotScene(name) {
+  try {
+    const res = await fetch("../shots.json");
+    if (!res.ok) return null;
+    const scenes = await res.json();
+    return scenes.find((s) => s.name === name) ?? null;
+  } catch {
+    return null;
   }
-
-  g.updateCamera(1);
 }
 
-export function autopilotStep(game) {
-  for (const car of game.traffic) {
-    if (!car.wrecked && car.speed < 120) {
-      car.speed = 120;
-    }
+export function applyShotScene(scene, game) {
+  if (!scene || !game) return;
+  game.seed = scene.seed;
+  if (scene.player) {
+    game.player.x = scene.player.x;
+    game.player.y = scene.player.y;
   }
-  if (game.shotCar) {
-    game.shotCar.speed = game.shotSpeed || 320;
-    game.spawnSmoke(
-      game.shotCar.x - Math.cos(game.shotCar.angle) * 24,
-      game.shotCar.y - Math.sin(game.shotCar.angle) * 24,
-    );
-  }
+  game.wanted.heat = scene.wanted ?? 0;
+  game.wanted.stars = scene.wanted ?? 0;
+  game.timeOfDay = scene.timeOfDay ?? "day";
+  game.shotMode = true;
+  game.fixedTime = 12.5; // frozen clock for identical frames
+}
+
+export function renderShotFrame(game) {
+  // Advance the world by fixed steps so AI settles deterministically, then draw once.
+  for (let i = 0; i < 30; i++) game.step(1 / 60, true);
+  game.draw();
 }

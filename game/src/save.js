@@ -1,9 +1,19 @@
-// Local persistence for progress between sessions.
-const KEY = 'solarbay_outlaw_save_v1';
+// localStorage save/load of progress: mission index, money, position.
+// All operations are try/catch wrapped so private-mode browsers never crash the game.
+const SAVE_KEY = "solar-bay-outlaw-save-v1";
 
-export function saveGame(data) {
+export function saveGame(state) {
   try {
-    localStorage.setItem(KEY, JSON.stringify(data));
+    const data = {
+      missionIndex: state.missionIndex ?? 0,
+      money: state.money ?? 0,
+      x: state.x ?? 0,
+      y: state.y ?? 0,
+      health: state.health ?? 100,
+      seed: state.seed ?? 1337,
+      savedAt: Date.now(),
+    };
+    localStorage.setItem(SAVE_KEY, JSON.stringify(data));
     return true;
   } catch {
     return false;
@@ -12,25 +22,24 @@ export function saveGame(data) {
 
 export function loadGame() {
   try {
-    const raw = localStorage.getItem(KEY);
-    return raw ? JSON.parse(raw) : null;
+    const raw = localStorage.getItem(SAVE_KEY);
+    if (!raw) return null;
+    const data = JSON.parse(raw);
+    if (typeof data !== "object" || data === null) return null;
+    return data;
   } catch {
     return null;
   }
 }
 
-export function hasSave() {
+export function clearSave() {
   try {
-    return localStorage.getItem(KEY) !== null;
+    localStorage.removeItem(SAVE_KEY);
   } catch {
-    return false;
+    // storage unavailable — nothing to clear
   }
 }
 
-export function clearSave() {
-  try {
-    localStorage.removeItem(KEY);
-  } catch {
-    // Ignore storage errors; saving is best-effort.
-  }
+export function hasSave() {
+  return loadGame() !== null;
 }

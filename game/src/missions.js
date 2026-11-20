@@ -1,204 +1,100 @@
-import { CFG } from './config.js';
+// 5-mission Mara Voss story chain: sequential objectives with dialog lines.
+// Objective types: goto a marker, deliver a car, or escape the police.
+export const MISSIONS = [
+  {
+    id: 1,
+    title: "First Wheels",
+    giver: "Mara Voss",
+    objective: "Go to the marker at the boardwalk garage.",
+    type: "goto",
+    reward: 150,
+    dialog: ["Mara: You made it to Solar Bay. Good.", "Mara: I need wheels. Meet me at the boardwalk garage."],
+  },
+  {
+    id: 2,
+    title: "Hot Delivery",
+    giver: "Mara Voss",
+    objective: "Steal a car and deliver it to the docks marker.",
+    type: "deliver-car",
+    reward: 400,
+    dialog: ["Mara: That ride by the pier? It's ours now.", "Mara: Bring it to the docks. Don't scratch it."],
+  },
+  {
+    id: 3,
+    title: "Heat Wave",
+    giver: "Mara Voss",
+    objective: "Lose the police (reach 2 stars, then clear your wanted level).",
+    type: "escape-police",
+    reward: 600,
+    dialog: ["Mara: Cops are sniffing around my crew.", "Mara: Make some noise, then vanish. Show me you can."],
+  },
+  {
+    id: 4,
+    title: "Beach Run",
+    giver: "Mara Voss",
+    objective: "Reach the beach marker on the east coast.",
+    type: "goto",
+    reward: 500,
+    dialog: ["Mara: Package on the beach. East side.", "Mara: Grab it before the tide — or the PD — does."],
+  },
+  {
+    id: 5,
+    title: "Solar Bay Outlaw",
+    giver: "Mara Voss",
+    objective: "Deliver a car to the final marker and clear your wanted level.",
+    type: "deliver-car",
+    reward: 1500,
+    dialog: ["Mara: Last job, outlaw.", "Mara: One car, one clean getaway. Then Solar Bay is yours."],
+  },
+];
 
-// Mara Voss's five-job story chain.
-export const CONTACT = { name: 'Mara Voss', role: 'fixer at the Harbor Row safehouse' };
-
-export function buildMissions(rng) {
-  const rp = () => ({
-    x: 300 + rng() * (CFG.WORLD_W - 600),
-    y: 300 + rng() * (CFG.WORLD_H - 1000),
-  });
-  const safehouse = { x: 520, y: 520 };
-  return [
-    {
-      id: 1,
-      title: 'Meet Mara',
-      type: 'goto',
-      target: safehouse,
-      reward: 150,
-      brief: 'Mara Voss is waiting at the Harbor Row safehouse. Get there on foot or by car.',
-      objective: 'Go to Mara at the safehouse',
-      doneText: 'Mara sizes you up. "You drive. I pay. Simple."',
-    },
-    {
-      id: 2,
-      title: 'Hot Delivery',
-      type: 'delivery',
-      target: rp(),
-      reward: 400,
-      time: 75,
-      brief: 'Mara hands you a sealed cooler. "Coral Heights, fast. No questions."',
-      objective: 'Deliver the cooler before time runs out',
-      doneText: 'Delivered cold. Mara wires your cut.',
-    },
-    {
-      id: 3,
-      title: 'Package Run',
-      type: 'packages',
-      target: rp(),
-      reward: 550,
-      count: 4,
-      brief: 'Four dead-drops across Palm District. Grab every package.',
-      objective: 'Collect the packages (0/4)',
-      doneText: 'All drops cleared. Word travels fast in Solar Bay.',
-    },
-    {
-      id: 4,
-      title: 'Ram the Courier',
-      type: 'ram',
-      target: rp(),
-      reward: 800,
-      brief: 'A rival courier in a teal sedan is moving product. Stop his car — ram it until it dies.',
-      objective: 'Ram the teal courier car until it is wrecked',
-      doneText: 'Courier stopped. Mara is very pleased.',
-    },
-    {
-      id: 5,
-      title: 'Sunset Getaway',
-      type: 'getaway',
-      target: { x: CFG.WORLD_W / 2, y: CFG.WORLD_H - 520 },
-      reward: 1200,
-      time: 90,
-      brief: 'Heat is coming. Reach the beach pier and lose the cops before the timer ends.',
-      objective: 'Reach the beach pier and lose the wanted level',
-      doneText: 'You vanish into the sunset. Solar Bay is yours.',
-    },
-  ];
-}
-
-export class MissionSystem {
-  constructor(rng) {
-    this.rng = rng;
-    this.list = buildMissions(rng);
-    this.index = 0;
-    this.active = null;
-    this.timer = 0;
-    this.collected = 0;
-    this.packages = [];
-    this.targetCar = null;
-    this.completed = 0;
-    this.banner = 0;
-    this.bannerText = '';
+export class MissionChain {
+  constructor(startIndex = 0) {
+    this.index = startIndex;
+    this.phase = "goto"; // goto | deliver | escape | done
+    this.sawStars = false;
   }
 
-  current() {
-    return this.active;
+  get current() {
+    return this.index < MISSIONS.length ? MISSIONS[this.index] : null;
   }
 
-  startNext(game) {
-    if (this.index >= this.list.length) {
-      this.active = null;
-      return;
-    }
-    const m = this.list[this.index];
-    this.active = m;
-    this.timer = m.time || 0;
-    this.collected = 0;
-    this.packages = [];
-    this.targetCar = null;
-    if (m.type === 'packages') {
-      for (let i = 0; i < m.count; i++) {
-        this.packages.push({
-          x: 300 + this.rng() * (CFG.WORLD_W - 600),
-          y: 300 + this.rng() * (CFG.WORLD_H - 1000),
-          taken: false,
-        });
-      }
-    }
-    if (m.type === 'ram') {
-      game.spawnTargetCar(m.target);
-    }
-    if (m.type === 'getaway') {
-      game.wanted.addCrime(2);
-    }
-    game.showBrief(m);
+  get complete() {
+    return this.index >= MISSIONS.length;
   }
 
-  marker() {
-    if (!this.active) return null;
-    if (this.active.type === 'packages') {
-      const next = this.packages.find((pk) => !pk.taken);
-      return next ? { x: next.x, y: next.y } : null;
-    }
-    if (this.active.type === 'ram' && this.targetCar) {
-      return { x: this.targetCar.x, y: this.targetCar.y };
-    }
-    return this.active.target;
+  markerFor(city) {
+    const m = this.current;
+    if (!m) return null;
+    // Deterministic marker spots derived from mission id.
+    const spots = [
+      { tx: 6, ty: 6 }, { tx: 32, ty: 8 }, { tx: 18, ty: 18 },
+      { tx: city.waterStartCol - 1, ty: 20 }, { tx: 10, ty: 32 },
+    ];
+    const s = spots[m.id - 1];
+    return { x: s.tx * 48 + 24, y: s.ty * 48 + 24 };
   }
 
-  objectiveText() {
-    if (!this.active) return "Free roam — press M for Mara's next job";
-    const m = this.active;
-    if (m.type === 'packages') {
-      return `Collect the packages (${this.collected}/${m.count})`;
+  update(player, wanted, city) {
+    const m = this.current;
+    if (!m) return null;
+    const marker = this.markerFor(city);
+    const nearMarker = marker && Math.hypot(player.x - marker.x, player.y - marker.y) < 60;
+
+    if (m.type === "goto" && nearMarker) return this.finish(player);
+    if (m.type === "deliver-car" && nearMarker && player.inVehicle) return this.finish(player);
+    if (m.type === "escape-police") {
+      if (wanted.stars >= 2) this.sawStars = true;
+      if (this.sawStars && wanted.stars === 0) return this.finish(player);
     }
-    if (m.type === 'ram' && this.targetCar) {
-      return `Ram the courier car — damage ${Math.max(0, Math.round(100 - this.targetCar.health))}%`;
-    }
-    if (m.time) {
-      return `${m.objective} — ${Math.ceil(this.timer)}s`;
-    }
-    return m.objective;
+    return null;
   }
 
-  update(dt, game) {
-    this.banner = Math.max(0, this.banner - dt);
-    if (!this.active) return;
-    const m = this.active;
-    const p = game.player;
-
-    if (m.time) {
-      this.timer -= dt;
-      if (this.timer <= 0) {
-        game.failMission('Out of time');
-        return;
-      }
-    }
-
-    if (m.type === 'goto' || m.type === 'delivery') {
-      if (Math.hypot(p.x - m.target.x, p.y - m.target.y) < 55) {
-        this.complete(game);
-      }
-    } else if (m.type === 'getaway') {
-      if (Math.hypot(p.x - m.target.x, p.y - m.target.y) < 70 && game.wanted.stars === 0) {
-        this.complete(game);
-      }
-    } else if (m.type === 'packages') {
-      for (const pk of this.packages) {
-        if (pk.taken) continue;
-        if (Math.hypot(p.x - pk.x, p.y - pk.y) < 34) {
-          pk.taken = true;
-          this.collected += 1;
-          game.audio.pickup();
-          game.addFloat(pk.x, pk.y - 24, 'PACKAGE', '#7CFC98');
-        }
-      }
-      if (this.collected >= m.count) {
-        this.complete(game);
-      }
-    } else if (m.type === 'ram') {
-      if (this.targetCar && this.targetCar.wrecked) {
-        this.complete(game);
-      }
-    }
-  }
-
-  complete(game) {
-    const m = this.active;
-    if (!m) return;
-    game.player.cash += m.reward;
-    this.completed += 1;
-    this.banner = 4;
-    this.bannerText = `MISSION PASSED  +$${m.reward}`;
-    game.audio.cash();
-    game.showDone(m);
-    this.index += 1;
-    this.active = null;
-  }
-
-  fail(game, why) {
-    this.banner = 3.5;
-    this.bannerText = `MISSION FAILED — ${why}`;
-    this.active = null;
+  finish(player) {
+    const m = this.current;
+    player.money += m.reward;
+    this.index++;
+    this.sawStars = false;
+    return m;
   }
 }

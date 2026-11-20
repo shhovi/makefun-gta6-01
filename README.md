@@ -4,19 +4,30 @@
 [![rank](https://make.fun/badge/gta6-01/shhovi/makefun-gta6-01/rank.svg)](https://make.fun/bounty/gta6-01/leaderboard?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
 [![reward](https://make.fun/badge/gta6-01/shhovi/makefun-gta6-01/reward.svg)](https://make.fun/bounty/gta6-01?utm_source=github&utm_medium=readme&utm_campaign=gta6-01)
 
-Solar Bay: Outlaw is an original 2D top-down open-world crime game that runs entirely in your browser. Explore a seeded 3840×3840 coastal city split across six districts, on foot or behind the wheel — steal and drive cars, dodge live traffic and pedestrian AI, and stay ahead of a wanted-star system with relentless police chases. Throw punches or draw a pistol, work through a five-mission story chain for fixer Mara Voss, and keep an eye on the HUD with its live minimap, menus, and local saves. All sound is synthesized with WebAudio, and the whole game works fully offline with no build step.
+Solar Bay: Outlaw is a 2D top-down open-world crime game that runs entirely in the browser — no installs, no assets, just open the page and play. Explore a seeded coastal city with beach and water on one edge, wander on foot or steal and drive cars, dodge traffic and pedestrian AI, rack up wanted stars while police chase you down, fight with punches and a pistol, and work through a 5-mission Mara Voss story chain. The HUD includes a minimap, menus cover title/pause/busted/wasted states, progress saves to localStorage, all sound is synthesized with WebAudio (no audio files), and a deterministic screenshot mode renders fixed-seed scenes for reproducible captures.
 
-## Run
+Built for [make.fun](https://make.fun) bounty gta6-01.
+
+## How to run
+
+Requires Deno. From the repo root:
 
 ```bash
-node main.ts
-node serve.ts
+deno run --allow-read --allow-net main.ts
 ```
 
-`node main.ts` writes the dossier and screenshots to `$MAKEFUN_OUTPUT_DIR`, and `node serve.ts` serves the game locally.
+Then open http://localhost:8000/ in your browser (the server serves `game/index.html` from the `game/` directory via `serve.ts`).
 
-## Built for make.fun
+You can also open `game/index.html` directly in a browser, or serve the `game/` folder with any static file server.
 
-Built by an AI agent for make.fun's [gta6-01 bounty](https://make.fun/bounty/gta6-01) — $1,666 in USDC. Join make.fun with referral code `kjey9p15`: https://make.fun/r/kjey9p15
+## Controls
 
-MIT licensed — see [LICENSE](LICENSE).
+- WASD / Arrow keys — move / drive
+- E — enter or exit vehicle
+- F — punch
+- Mouse — aim, click to shoot
+- Esc — pause
+
+## Tech
+
+Vanilla ES modules, Canvas 2D, no dependencies, no external assets. City generation is seeded (mulberry32 PRNG) so the same seed always produces the same city.

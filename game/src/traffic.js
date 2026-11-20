@@ -1,95 +1,64 @@
-import { CFG } from './config.js';
-import { Vehicle } from './vehicles.js';
+// Traffic AI: cars follow the road grid, simple collision avoidance.
+// Cars slow for traffic ahead and randomly turn at intersections.
+import { TILE, TRAFFIC_SPEED } from "./config.js";
+import { TILE_ROAD } from "./city.js";
+import { Car } from "./vehicles.js";
 
-// Ambient drivers that cruise the road grid.
-export class TrafficCar extends Vehicle {
-  constructor(x, y, angle, rng) {
-    super(x, y, angle, { hasDriver: true });
-    this.rng = rng;
-    this.cruise = 150 + rng() * 90;
+export class TrafficCar extends Car {
+  constructor(x, y, angle, color) {
+    super(x, y, angle, color);
+    this.cruiseSpeed = TRAFFIC_SPEED;
     this.turnCooldown = 0;
-    this.stuck = 0;
   }
 
-  updateAI(dt, city, others, player) {
-    if (this.wrecked) return;
+  update(dt, city, others) {
     this.turnCooldown -= dt;
+    // Collision avoidance: slow down if a car is close ahead.
+    const aheadX = this.x + Math.cos(this.angle) * 56;
+    const aheadY = this.y + Math.sin(this.angle) * 56;
+    let blocked = false;
+    for (const o of others) {
+      if (o === this) continue;
+      if (Math.hypot(o.x - aheadX, o.y - aheadY) < 40) { blocked = true; break; }
+    }
+    const target = blocked ? 0 : this.cruiseSpeed;
+    this.speed += (target - this.speed) * Math.min(1, dt * 2);
 
-    const aheadX = this.x + Math.cos(this.angle) * 60;
-    const aheadY = this.y + Math.sin(this.angle) * 60;
-    let blocked = city.collides(aheadX, aheadY, 20);
-    if (!blocked) {
-      for (const other of others) {
-        if (other === this) continue;
-        if (Math.hypot(other.x - aheadX, other.y - aheadY) < 55) {
-          blocked = true;
-          break;
-        }
+    // At intersections, maybe turn onto a perpendicular road.
+    const tx = Math.floor(this.x / TILE);
+    const ty = Math.floor(this.y / TILE);
+    if (this.turnCooldown <= 0 && city.grid[ty]?.[tx] === TILE_ROAD) {
+      const options = [];
+      const dirs = [[1, 0, 0], [-1, 0, Math.PI], [0, 1, Math.PI / 2], [0, -1, -Math.PI / 2]];
+      for (const [dx, dy, ang] of dirs) {
+        if (city.grid[ty + dy]?.[tx + dx] === TILE_ROAD) options.push(ang);
       }
-    }
-    if (!blocked && player && !player.inCar) {
-      if (Math.hypot(player.x - aheadX, player.y - aheadY) < 50) {
-        blocked = true;
-      }
-    }
-
-    const target = blocked ? 0 : this.cruise;
-    this.speed += (target - this.speed) * Math.min(1, dt * 2.2);
-
-    const step = CFG.BLOCK + CFG.ROAD;
-    const mx = ((this.x % step) + step) % step;
-    const my = ((this.y % step) + step) % step;
-    const nearX = mx < 60 || mx > step - 60;
-    const nearY = my < 60 || my > step - 60;
-    if (nearX && nearY && this.turnCooldown <= 0 && this.rng() < 0.5) {
-      this.angle += (this.rng() < 0.5 ? 1 : -1) * (Math.PI / 2);
-      this.turnCooldown = 2;
-    }
-
-    if (!city.isRoad(this.x, this.y)) {
-      const rp = city.nearestRoadPoint(this.x, this.y);
-      if (rp) {
-        const want = Math.atan2(rp.y - this.y, rp.x - this.x);
-        let diff = want - this.angle;
-        while (diff > Math.PI) diff -= Math.PI * 2;
-        while (diff < -Math.PI) diff += Math.PI * 2;
-        this.angle += diff * Math.min(1, dt * 3);
+      if (options.length > 1 && Math.random() < 0.35) {
+        this.angle = options[Math.floor(Math.random() * options.length)];
+        this.turnCooldown = 1.2;
       }
     }
 
     const nx = this.x + Math.cos(this.angle) * this.speed * dt;
     const ny = this.y + Math.sin(this.angle) * this.speed * dt;
-    if (!city.collides(nx, ny, 20)) {
+    const ntx = Math.floor(nx / TILE);
+    const nty = Math.floor(ny / TILE);
+    if (city.grid[nty]?.[ntx] === TILE_ROAD) {
       this.x = nx;
       this.y = ny;
-      this.stuck = 0;
     } else {
-      this.speed *= 0.4;
-      this.stuck += dt;
-      if (this.stuck > 1.2) {
-        this.angle += Math.PI / 2;
-        this.stuck = 0;
-      }
-    }
-
-    if (this.health < 45) {
-      this.smoke = Math.min(1, this.smoke + dt * 0.5);
-    }
-    if (this.health <= 0) {
-      this.health = 0;
-      this.wrecked = true;
+      this.angle += Math.PI / 2; // steer back toward roads
+      this.turnCooldown = 0.5;
     }
   }
 }
 
-export function spawnTraffic(city, rng, count = 14) {
+export function spawnTraffic(city, rng, count) {
   const cars = [];
-  for (let i = 0; i < count; i++) {
-    const p = city.nearestRoadPoint(rng() * CFG.WORLD_W, rng() * (CFG.WORLD_H - 500));
-    if (!p) continue;
-    const horiz = rng() < 0.5;
-    const angle = horiz ? (rng() < 0.5 ? 0 : Math.PI) : (rng() < 0.5 ? Math.PI / 2 : -Math.PI / 2);
-    cars.push(new TrafficCar(p.x, p.y, angle, rng));
+  for (let i = 0; i < count && city.roadTiles.length > 0; i++) {
+    const t = rng.pick(city.roadTiles);
+    const angle = rng.pick([0, Math.PI / 2, Math.PI, -Math.PI / 2]);
+    cars.push(new TrafficCar(t.tx * TILE + TILE / 2, t.ty * TILE + TILE / 2, angle, rng.pick(["#c0392b", "#2980b9", "#27ae60", "#f39c12", "#ecf0f1"])));
   }
   return cars;
 }

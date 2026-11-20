@@ -1,35 +1,57 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Solar Bay: Outlaw</title>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Solar Bay: Outlaw — 2D Open-World Crime Game</title>
 <style>
-  html, body {
-    margin: 0;
-    padding: 0;
-    background: #0b1c2c;
-    overflow: hidden;
-    height: 100%;
-  }
-  #wrap {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    height: 100vh;
-  }
-  canvas {
-    display: block;
-    background: #79b5d8;
-    box-shadow: 0 0 40px rgba(0,0,0,.6);
-  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 100%; height: 100%; background: #101418; overflow: hidden; font-family: monospace; }
+  #game-canvas { display: block; width: 100%; height: 100%; }
+  #hud { position: fixed; top: 12px; right: 12px; color: #fff; text-align: right; pointer-events: none; }
+  #wanted-stars { font-size: 28px; color: #ffd23f; letter-spacing: 4px; text-shadow: 0 0 6px #000; }
+  #stats { font-size: 16px; margin-top: 4px; text-shadow: 0 0 4px #000; }
+  #minimap-canvas { position: fixed; left: 12px; bottom: 12px; width: 160px; height: 160px; background: rgba(0,0,0,0.5); border: 2px solid rgba(255,255,255,0.4); border-radius: 6px; }
+  #mission-text { position: fixed; left: 50%; bottom: 24px; transform: translateX(-50%); color: #fff; background: rgba(0,0,0,0.55); padding: 8px 18px; border-radius: 6px; font-size: 16px; pointer-events: none; }
+  .menu-screen { position: fixed; inset: 0; display: none; flex-direction: column; align-items: center; justify-content: center; background: rgba(8,10,14,0.85); color: #fff; z-index: 10; }
+  .menu-screen.active { display: flex; }
+  .menu-screen h1 { font-size: 56px; letter-spacing: 2px; margin-bottom: 12px; }
+  .menu-screen p { font-size: 17px; margin-bottom: 8px; opacity: 0.9; }
+  .menu-screen button { margin-top: 16px; padding: 10px 28px; font-size: 17px; font-family: monospace; background: #e4572e; color: #fff; border: none; border-radius: 6px; cursor: pointer; }
+  .menu-screen button:hover { background: #f06a40; }
 </style>
 </head>
 <body>
-<!-- Solar Bay: Outlaw — canvas shell -->
-<div id="wrap">
-  <canvas id="game" width="1280" height="720"></canvas>
+<canvas id="game-canvas"></canvas>
+
+<div id="hud">
+  <div id="wanted-stars"></div>
+  <div id="stats"></div>
 </div>
-<script type="module" src="./src/main.js"></script>
+<canvas id="minimap-canvas" width="160" height="160"></canvas>
+<div id="mission-text"></div>
+
+<div id="menu-title" class="menu-screen active">
+  <h1>SOLAR BAY: OUTLAW</h1>
+  <p>WASD / Arrows — move &amp; drive · E — enter car · F — punch · Mouse — aim &amp; shoot</p>
+  <p>Work the Mara Voss chain. Keep your stars down — or don't.</p>
+  <button id="btn-start">Start Game</button>
+</div>
+<div id="menu-pause" class="menu-screen">
+  <h1>PAUSED</h1>
+  <button id="btn-resume">Resume</button>
+</div>
+<div id="menu-busted" class="menu-screen">
+  <h1>BUSTED</h1>
+  <p>The Solar Bay PD got you this time.</p>
+  <button id="btn-busted-restart">Respawn</button>
+</div>
+<div id="menu-wasted" class="menu-screen">
+  <h1>WASTED</h1>
+  <p>Solar Bay claims another outlaw.</p>
+  <button id="btn-wasted-restart">Respawn</button>
+</div>
+
+<script type="module" src="src/main.js"></script>
 </body>
 </html>
