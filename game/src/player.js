@@ -1,46 +1,75 @@
-// Player: on-foot movement, vehicle enter/exit, health.
-import { CONFIG } from "./config.js";
-import { isBlocked } from "./city.js";
+import { CONFIG, clamp } from "./config.js";
+import { collidesBuilding } from "./city.js";
+import { updateCar, createCar } from "./vehicles.js";
 
 export function createPlayer(x, y) {
-  return { x: x, y: y, vx: 0, vy: 0, angle: 0, health: CONFIG.MAX_HEALTH, money: 0, vehicle: null, alive: true };
+  return {
+    x,
+    y,
+    angle: 0,
+    health: CONFIG.startHealth,
+    money: CONFIG.startMoney,
+    inVehicle: false,
+    vehicle: null,
+    punchCooldown: 0,
+    shootCooldown: 0,
+    name: "Outlaw",
+  };
 }
-export function updatePlayer(player, input, city) {
-  if (player.vehicle) {
+
+export function updatePlayer(player, input, city, dt) {
+  if (player.punchCooldown > 0) player.punchCooldown -= dt;
+  if (player.shootCooldown > 0) player.shootCooldown -= dt;
+  if (player.inVehicle && player.vehicle) {
+    updateCar(player.vehicle, input, city, dt);
     player.x = player.vehicle.x;
     player.y = player.vehicle.y;
+    player.angle = player.vehicle.angle;
+    if (input.wasPressed("e")) {
+      player.inVehicle = false;
+      player.vehicle.driver = null;
+      player.x = player.vehicle.x + 24;
+      player.y = player.vehicle.y;
+      player.vehicle = null;
+    }
     return;
   }
   const ax = input.axis();
-  const run = input.isDown("shift") ? CONFIG.PLAYER_RUN : CONFIG.PLAYER_SPEED;
   const len = Math.hypot(ax.x, ax.y) || 1;
-  const nx = player.x + (ax.x / len) * run * (ax.x || ax.y ? 1 : 0);
-  const ny = player.y + (ax.y / len) * run * (ax.x || ax.y ? 1 : 0);
-  const T = CONFIG.TILE;
-  if (!isBlocked(city, Math.floor(nx / T), Math.floor(player.y / T))) player.x = nx;
-  if (!isBlocked(city, Math.floor(player.x / T), Math.floor(ny / T))) player.y = ny;
-  if (ax.x || ax.y) player.angle = Math.atan2(ax.y, ax.x);
-  player.x = Math.max(8, Math.min(CONFIG.WORLD_W - 8, player.x));
-  player.y = Math.max(8, Math.min(CONFIG.WORLD_H - 8, player.y));
-}
-export function nearestVehicle(player, vehicles, maxDist) {
-  let best = null, bestD = maxDist || 48;
-  for (const v of vehicles) {
-    const d = Math.hypot(v.x - player.x, v.y - player.y);
-    if (d < bestD) { bestD = d; best = v; }
+  const speed = input.isDown("shift") ? CONFIG.playerSprint : CONFIG.playerSpeed;
+  if (ax.x !== 0 || ax.y !== 0) {
+    player.angle = Math.atan2(ax.y, ax.x);
+    const nx = player.x + (ax.x / len) * speed * dt * 60 * 0.016;
+    const ny = player.y + (ax.y / len) * speed * dt * 60 * 0.016;
+    if (!collidesBuilding(city, nx, player.y, CONFIG.playerRadius)) player.x = nx;
+    if (!collidesBuilding(city, player.x, ny, CONFIG.playerRadius)) player.y = ny;
   }
-  return best;
+  player.x = clamp(player.x, 16, CONFIG.worldWidth - 16);
+  player.y = clamp(player.y, 16, CONFIG.worldHeight - 16);
 }
-export function damagePlayer(player, amount) {
-  player.health = Math.max(0, player.health - amount);
-  if (player.health <= 0) player.alive = false;
-  return player.alive;
+
+export function tryEnterVehicle(player, parked, traffic) {
+  const all = parked.concat(traffic);
+  for (const car of all) {
+    const dx = car.x - player.x;
+    const dy = car.y - player.y;
+    if (dx * dx + dy * dy < 40 * 40) {
+      player.inVehicle = true;
+      player.vehicle = car;
+      car.driver = "player";
+      car.speed = 0;
+      return true;
+    }
+  }
+  return false;
 }
-export function respawnPlayer(player, x, y) {
-  player.x = x; player.y = y; player.health = CONFIG.MAX_HEALTH;
-  player.alive = true; player.vehicle = null;
-  return player;
-}
-export function healPlayer(player, amount) {
-  player.health = Math.min(CONFIG.MAX_HEALTH, player.health + amount);
+
+export function spawnParkedCars(city, rng) {
+  const cars = [];
+  const colors = ["#e63946", "#457b9d", "#f4a261", "#2a9d8f", "#e9c46a"];
+  for (let i = 0; i < 8; i++) {
+    const road = city.roads[Math.floor(rng() * city.roads.length)];
+    cars.push(createCar(road.x + 24, road.y + 24, rng() * Math.PI * 2, colors[i % colors.length]));
+  }
+  return cars;
 }

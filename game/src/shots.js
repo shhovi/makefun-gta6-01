@@ -1,29 +1,33 @@
-// Deterministic screenshot mode driven by shots.json scenes.
-export function parseShotParams(search) {
+export const SHOT_SCENES = [
+  { name: "city", file: "1-city.jpg", seed: 1337, time: 12, wanted: 0, money: 250, health: 100, mission: 0, player: { x: 320, y: 240, angle: 0, inVehicle: false } },
+  { name: "drive", file: "2-drive.jpg", seed: 1337, time: 15, wanted: 1, money: 400, health: 100, mission: 1, player: { x: 480, y: 360, angle: 1.57, inVehicle: true } },
+  { name: "chase", file: "3-chase.jpg", seed: 1337, time: 18, wanted: 3, money: 650, health: 72, mission: 2, player: { x: 640, y: 300, angle: 0.78, inVehicle: true } },
+  { name: "mission", file: "4-mission.jpg", seed: 1337, time: 10, wanted: 0, money: 900, health: 100, mission: 3, player: { x: 400, y: 400, angle: 0, inVehicle: false } },
+];
+
+export function parseShotParam(search) {
   const params = new URLSearchParams(search || "");
-  return { shot: params.get("shot"), seed: params.get("seed") ? Number(params.get("seed")) : null };
-}
-export async function loadShots(url) {
-  try {
-    const res = await fetch(url || "../shots.json");
-    if (!res.ok) return [];
-    const data = await res.json();
-    return data.scenes || [];
-  } catch (e) { return []; }
-}
-export function applyShot(state, scene) {
-  if (!scene) return;
-  if (scene.player) { state.player.x = scene.player.x; state.player.y = scene.player.y; }
-  if (typeof scene.wanted === "number") {
-    state.police.wanted = scene.wanted;
-    state.police.heat = scene.wanted > 0 ? (scene.wanted - 1) * 100 + 50 : 0;
+  const shot = params.get("shot");
+  if (!shot) return null;
+  for (const scene of SHOT_SCENES) {
+    if (scene.name === shot) return scene;
   }
-  state.timeOfDay = scene.timeOfDay || "day";
-  state.shotName = scene.name;
-  state.shotMode = true;
-}
-export function shotNames(scenes) { return scenes.map(function (s) { return s.name; }); }
-export function findShot(scenes, name) {
-  for (const s of scenes) if (s.name === name) return s;
   return null;
+}
+
+export function applyShot(state, scene) {
+  state.seed = scene.seed;
+  state.player.x = scene.player.x;
+  state.player.y = scene.player.y;
+  state.player.angle = scene.player.angle;
+  state.player.health = scene.health;
+  state.player.money = scene.money;
+  state.police.wanted = scene.wanted;
+  state.police.heat = scene.wanted * 20;
+  state.missions.index = scene.mission;
+  state.shotMode = true;
+  state.shotName = scene.name;
+  state.timeOfDay = scene.time;
+  state.shotFile = scene.file;
+  return state;
 }

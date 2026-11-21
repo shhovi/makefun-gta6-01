@@ -1,41 +1,64 @@
-// Police: wanted stars, chase behaviour, busted and wasted states.
-import { CONFIG } from "./config.js";
+import { CONFIG, clamp } from "./config.js";
+import { createCar, moveCarAI } from "./vehicles.js";
 
-export function createPoliceState() {
-  return { wanted: 0, heat: 0, cops: [], bustedTimer: 0 };
+export function createPolice() {
+  return {
+    wanted: 0,
+    heat: 0,
+    cars: [],
+    bustedTimer: 0,
+    state: "idle",
+    unit: "Solar Bay PD",
+  };
 }
-export function addHeat(state, amount) {
-  state.heat = Math.min(500, state.heat + amount);
-  state.wanted = Math.min(5, Math.floor(state.heat / 100) + (state.heat > 0 ? 1 : 0));
-  if (state.heat === 0) state.wanted = 0;
-  return state.wanted;
+
+export function addHeat(police, amount) {
+  police.heat = clamp(police.heat + amount, 0, 100);
+  police.wanted = clamp(Math.ceil(police.heat / 20), 0, CONFIG.maxWanted);
 }
-export function decayHeat(state, dt) {
-  state.heat = Math.max(0, state.heat - dt * 0.004);
-  state.wanted = state.heat <= 0 ? 0 : Math.min(5, Math.floor(state.heat / 100) + 1);
-}
-export function updatePolice(state, player, rng, now) {
-  const want = state.wanted * 2;
-  while (state.cops.length < want) {
-    state.cops.push({
-      x: player.x + (rng() - 0.5) * 500,
-      y: player.y + (rng() - 0.5) * 500,
-      angle: 0, speed: CONFIG.POLICE_SPEED, color: CONFIG.COLORS.police,
-    });
+
+export function updatePolice(police, player, rng, dt) {
+  if (police.wanted > 0) {
+    police.heat = Math.max(0, police.heat - dt * 1.2);
+    if (police.heat <= 0) police.wanted = 0;
+    else police.wanted = clamp(Math.ceil(police.heat / 20), 1, CONFIG.maxWanted);
   }
-  if (state.wanted === 0) state.cops.length = 0;
-  let touching = false;
-  for (const cop of state.cops) {
-    const dx = player.x - cop.x, dy = player.y - cop.y;
-    const d = Math.hypot(dx, dy) || 1;
-    cop.angle = Math.atan2(dy, dx);
-    cop.x += (dx / d) * cop.speed;
-    cop.y += (dy / d) * cop.speed;
-    if (d < 30) touching = true;
+  const desired = police.wanted === 0 ? 0 : CONFIG.policeBase + police.wanted;
+  while (police.cars.length < desired) {
+    const sx = clamp(player.x + (rng() - 0.5) * 700, 30, CONFIG.worldWidth - 30);
+    const sy = clamp(player.y + (rng() - 0.5) * 700, 30, CONFIG.worldHeight - 30);
+    const car = createCar(sx, sy, 0, "#2b4c9b");
+    car.driver = "police";
+    police.cars.push(car);
   }
-  if (touching && state.wanted > 0) state.bustedTimer += 16;
-  else state.bustedTimer = Math.max(0, state.bustedTimer - 16);
-  return { busted: state.bustedTimer > 1500, touching: touching };
+  while (police.cars.length > desired) police.cars.pop();
+  let nearest = Infinity;
+  for (const car of police.cars) {
+    moveCarAI(car, player.x, player.y, 3.2 + police.wanted * 0.5, dt);
+    const dx = car.x - player.x;
+    const dy = car.y - player.y;
+    const d = Math.hypot(dx, dy);
+    if (d < nearest) nearest = d;
+    if (d < 30 && !player.inVehicle) {
+      player.health -= dt * 6;
+    }
+  }
+  if (police.wanted > 0 && nearest < 44 && (!player.inVehicle || Math.abs(player.vehicle.speed) < 0.6)) {
+    police.bustedTimer += dt;
+    police.state = "busting";
+  } else {
+    police.bustedTimer = Math.max(0, police.bustedTimer - dt * 2);
+    police.state = police.wanted > 0 ? "chase" : "idle";
+  }
+  if (police.bustedTimer > 2.5) return "busted";
+  if (player.health <= 0) return "wasted";
+  return null;
 }
-export function clearWanted(state) { state.heat = 0; state.wanted = 0; state.cops.length = 0; state.bustedTimer = 0; }
-export function wantedLabel(state) { return state.wanted === 0 ? "clean" : "wanted x" + state.wanted; }
+
+export function clearWanted(police) {
+  police.wanted = 0;
+  police.heat = 0;
+  police.cars = [];
+  police.bustedTimer = 0;
+  police.state = "idle";
+}

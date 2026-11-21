@@ -1,38 +1,55 @@
-// Keyboard and mouse input: WASD/arrows, E car, F punch, mouse shoot.
 export function createInput(canvas) {
-  const input = {
-    keys: {},
-    mouseX: 0,
-    mouseY: 0,
-    mouseDown: false,
-    pressed: {},
-    isDown: function (k) { return !!this.keys[k]; },
-    clear: function () { this.keys = {}; this.pressed = {}; this.mouseDown = false; },
-    wasPressed: function (k) { const v = !!this.pressed[k]; this.pressed[k] = false; return v; },
-    axis: function () {
-      let x = 0, y = 0;
-      if (this.keys["a"] || this.keys["arrowleft"]) x -= 1;
-      if (this.keys["d"] || this.keys["arrowright"]) x += 1;
-      if (this.keys["w"] || this.keys["arrowup"]) y -= 1;
-      if (this.keys["s"] || this.keys["arrowdown"]) y += 1;
-      return { x: x, y: y };
+  const keys = {};
+  const mouse = { x: 0, y: 0, down: false, clicked: false };
+  const pressed = {};
+  window.addEventListener("keydown", (e) => {
+    const k = e.key.toLowerCase();
+    if (!keys[k]) pressed[k] = true;
+    keys[k] = true;
+    if (k === " " || k.startsWith("arrow")) e.preventDefault();
+  });
+  window.addEventListener("keyup", (e) => {
+    keys[e.key.toLowerCase()] = false;
+  });
+  canvas.addEventListener("mousemove", (e) => {
+    const rect = canvas.getBoundingClientRect();
+    mouse.x = e.clientX - rect.left;
+    mouse.y = e.clientY - rect.top;
+  });
+  canvas.addEventListener("mousedown", () => {
+    mouse.down = true;
+    mouse.clicked = true;
+  });
+  window.addEventListener("mouseup", () => {
+    mouse.down = false;
+  });
+  return {
+    keys,
+    mouse,
+    isDown(k) {
+      return !!keys[k];
+    },
+    wasPressed(k) {
+      return !!pressed[k];
+    },
+    endFrame() {
+      for (const k of Object.keys(pressed)) delete pressed[k];
+      mouse.clicked = false;
+    },
+    axis() {
+      let x = 0;
+      let y = 0;
+      if (keys["a"] || keys["arrowleft"]) x -= 1;
+      if (keys["d"] || keys["arrowright"]) x += 1;
+      if (keys["w"] || keys["arrowup"]) y -= 1;
+      if (keys["s"] || keys["arrowdown"]) y += 1;
+      return { x, y };
+    },
+    reset() {
+      for (const k of Object.keys(keys)) delete keys[k];
+      for (const k of Object.keys(pressed)) delete pressed[k];
+      mouse.down = false;
+      mouse.clicked = false;
     },
   };
-  window.addEventListener("keydown", function (e) {
-    const k = e.key.toLowerCase();
-    if (!input.keys[k]) input.pressed[k] = true;
-    input.keys[k] = true;
-    if (k.indexOf("arrow") === 0) e.preventDefault();
-  });
-  window.addEventListener("keyup", function (e) { input.keys[e.key.toLowerCase()] = false; });
-  if (canvas) {
-    canvas.addEventListener("mousemove", function (e) {
-      const r = canvas.getBoundingClientRect();
-      input.mouseX = e.clientX - r.left;
-      input.mouseY = e.clientY - r.top;
-    });
-    canvas.addEventListener("mousedown", function () { input.mouseDown = true; input.pressed["mouse"] = true; });
-    window.addEventListener("mouseup", function () { input.mouseDown = false; });
-  }
-  return input;
 }

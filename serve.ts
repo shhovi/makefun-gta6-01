@@ -1,32 +1,42 @@
-// Deno static file server for ./game. No dependencies.
-const MIME = {
+const MIME: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
-  ".css": "text/css; charset=utf-8",
   ".json": "application/json; charset=utf-8",
-  ".png": "image/png",
+  ".css": "text/css; charset=utf-8",
   ".jpg": "image/jpeg",
   ".jpeg": "image/jpeg",
+  ".png": "image/png",
+  ".svg": "image/svg+xml",
+  ".txt": "text/plain; charset=utf-8",
 };
 
-export async function serveStatic(port) {
-  // Serves ./game only; directory traversal is rejected below.
-  const root = new URL("./game/", import.meta.url).pathname;
-  console.log("Solar Bay serving " + root + " on http://localhost:" + port);
-  await Deno.serve({ port: port }, async (req) => {
+function mimeFor(path: string): string {
+  const dot = path.lastIndexOf(".");
+  if (dot < 0) return "application/octet-stream";
+  const ext = path.slice(dot).toLowerCase();
+  return MIME[ext] ?? "application/octet-stream";
+}
+
+export async function serveStatic(port: number): Promise<void> {
+  const root = new URL("./game/", import.meta.url);
+  const handler = async (req: Request): Promise<Response> => {
     try {
       const url = new URL(req.url);
-      let path = decodeURIComponent(url.pathname);
-      if (path === "/") path = "/index.html";
-      if (path.includes("..")) return new Response("Forbidden", { status: 403 });
-      const filePath = root + path.replace(/^\//, "");
-      const data = await Deno.readFile(filePath);
-      const dot = path.lastIndexOf(".");
-      const ext = dot >= 0 ? path.slice(dot).toLowerCase() : "";
-      const type = MIME[ext] || "application/octet-stream";
-      return new Response(data, { headers: { "content-type": type } });
+      let pathname = decodeURIComponent(url.pathname);
+      if (pathname === "/" || pathname === "") pathname = "/index.html";
+      if (pathname.includes("..")) {
+        return new Response("Bad Request", { status: 400 });
+      }
+      const fileUrl = new URL("." + pathname, root);
+      const data = await Deno.readFile(fileUrl);
+      return new Response(data, {
+        status: 200,
+        headers: { "content-type": mimeFor(pathname) },
+      });
     } catch {
-      return new Response("404 Not Found", { status: 404 });
+      return new Response("Not Found", { status: 404 });
     }
-  }).finished;
+  };
+  console.log("Solar Bay: Outlaw serving game on port " + String(port) + " (static, no deps)");
+  await Deno.serve({ port }, handler).finished;
 }

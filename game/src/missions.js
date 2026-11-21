@@ -1,28 +1,83 @@
-// Five-mission Mara Voss story chain with objectives and dialog.
 export const MISSIONS = [
-  { id: 1, title: "Welcome to Solar Bay", giver: "Mara Voss", dialog: "Mara Voss: New in town? Meet me at the pier and I will show you the ropes.", objective: "Go to the pier marker", x: 1600, y: 320, reward: 100 },
-  { id: 2, title: "First Wheels", giver: "Mara Voss", dialog: "Mara Voss: Borrow a car and bring it to the garage on Palm Street.", objective: "Deliver a car to the garage", x: 320, y: 960, reward: 200 },
-  { id: 3, title: "Hot Package", giver: "Mara Voss", dialog: "Mara Voss: Take this package across town. Do not stop for anyone.", objective: "Deliver the package downtown", x: 960, y: 960, reward: 350 },
-  { id: 4, title: "Heat Wave", giver: "Mara Voss", dialog: "Mara Voss: The police are watching the beach. Lose them, then come back.", objective: "Reach the safehouse with no wanted stars", x: 640, y: 1600, reward: 500 },
-  { id: 5, title: "Solar Bay Finale", giver: "Mara Voss", dialog: "Mara Voss: One last run at sunset. Make it count, outlaw.", objective: "Reach the lighthouse lookout", x: 1700, y: 1700, reward: 1000 },
+  {
+    id: 1,
+    title: "First Ride",
+    giver: "Mara Voss",
+    brief: "Mara Voss: Get in a car and drive to the pier marker.",
+    objective: "Enter a vehicle and reach the pier",
+    reward: 150,
+    target: { x: 480, y: 1248 },
+    needVehicle: true,
+  },
+  {
+    id: 2,
+    title: "Hot Wheels",
+    giver: "Mara Voss",
+    brief: "Mara Voss: Bring me a clean car. Watch the heat.",
+    objective: "Deliver a car to the garage",
+    reward: 250,
+    target: { x: 960, y: 480 },
+    needVehicle: true,
+  },
+  {
+    id: 3,
+    title: "Bay Runner",
+    giver: "Mara Voss",
+    brief: "Mara Voss: Run the package across the bay, fast.",
+    objective: "Reach the drop point on foot or by car",
+    reward: 350,
+    target: { x: 1440, y: 720 },
+    needVehicle: false,
+  },
+  {
+    id: 4,
+    title: "Heat Wave",
+    giver: "Mara Voss",
+    brief: "Mara Voss: Lose the police, then come back to me.",
+    objective: "Lose your wanted stars, then return",
+    reward: 500,
+    target: { x: 720, y: 360 },
+    needVehicle: false,
+  },
+  {
+    id: 5,
+    title: "Outlaw",
+    giver: "Mara Voss",
+    brief: "Mara Voss: One last score. Make it count, outlaw.",
+    objective: "Reach the final marker and survive",
+    reward: 1000,
+    target: { x: 1680, y: 240 },
+    needVehicle: false,
+  },
 ];
-export function missionCount() { return MISSIONS.length; }
+
 export function createMissionState() {
-  return { index: 0, active: MISSIONS[0], done: [] };
+  return { index: 0, active: true, completed: [], message: MISSIONS[0].brief, giver: "Mara Voss" };
 }
-export function currentObjective(ms) {
-  if (!ms.active) return null;
-  return { x: ms.active.x, y: ms.active.y, text: ms.active.objective };
+
+export function currentMission(state) {
+  if (!state.active || state.index >= MISSIONS.length) return null;
+  return MISSIONS[state.index];
 }
-export function checkMission(ms, player, wanted) {
-  if (!ms.active) return null;
-  const m = ms.active;
-  const d = Math.hypot(player.x - m.x, player.y - m.y);
-  if (d > 40) return null;
-  if (m.id === 4 && wanted > 0) return null;
-  ms.done.push(m.id);
-  player.money += m.reward;
-  ms.index += 1;
-  ms.active = MISSIONS[ms.index] || null;
-  return m;
+
+export function updateMissions(state, player, wanted) {
+  const mission = currentMission(state);
+  if (!mission) return null;
+  if (mission.needVehicle && !player.inVehicle) return null;
+  if (mission.id === 4 && wanted > 0) return null;
+  const dx = player.x - mission.target.x;
+  const dy = player.y - mission.target.y;
+  if (dx * dx + dy * dy < 36 * 36) {
+    player.money += mission.reward;
+    state.completed.push(mission.id);
+    state.index += 1;
+    if (state.index >= MISSIONS.length) {
+      state.active = false;
+      state.message = "Mara Voss: You own Solar Bay now.";
+    } else {
+      state.message = MISSIONS[state.index].brief;
+    }
+    return mission;
+  }
+  return null;
 }

@@ -1,34 +1,59 @@
-// HUD: wanted stars, health, money, minimap, objective text.
 import { CONFIG } from "./config.js";
+import { currentMission } from "./missions.js";
 
-export function starString(wanted) {
-  let s = "";
-  for (let i = 0; i < 5; i++) s += i < wanted ? "\u2605" : "\u2606";
-  return s;
+export function createHud() {
+  return {
+    healthEl: document.getElementById("hud-health"),
+    moneyEl: document.getElementById("hud-money"),
+    starsEl: document.getElementById("hud-stars"),
+    objectiveEl: document.getElementById("hud-objective"),
+    minimap: document.getElementById("hud-minimap"),
+    dialogEl: document.getElementById("dialog"),
+  };
 }
-export function updateHud(els, state) {
-  if (els.stars) els.stars.textContent = starString(state.police.wanted);
-  if (els.stats) els.stats.textContent = "Health: " + Math.round(state.player.health) + "  Money: $" + state.player.money;
-  if (els.mission) {
-    const m = state.missions.active;
-    els.mission.textContent = m ? m.dialog + " — " + m.objective : "Mara Voss: You run Solar Bay now. Free roam.";
+
+export function updateHud(hud, state) {
+  const player = state.player;
+  hud.healthEl.textContent = "Health " + String(Math.max(0, Math.round(player.health))) + " / 100";
+  hud.moneyEl.textContent = "$" + String(player.money);
+  let stars = "";
+  for (let i = 0; i < state.police.wanted; i++) stars += "*";
+  hud.starsEl.textContent = stars;
+  const mission = currentMission(state.missions);
+  if (mission) hud.objectiveEl.textContent = mission.title + ": " + mission.objective;
+  else hud.objectiveEl.textContent = "Free roam in Solar Bay";
+  if (state.missions.message) {
+    hud.dialogEl.textContent = state.missions.message;
+    hud.dialogEl.classList.add("active");
   }
+  drawMinimap(hud.minimap, state);
 }
-export function healthBarWidth(health, maxW) { return Math.round((Math.max(0, health) / CONFIG.MAX_HEALTH) * maxW); }
-export function drawMinimap(ctx, state) {
-  const w = ctx.canvas.width, h = ctx.canvas.height;
-  const sx = w / CONFIG.WORLD_W, sy = h / CONFIG.WORLD_H;
-  ctx.fillStyle = "#123524";
-  ctx.fillRect(0, 0, w, h);
-  ctx.fillStyle = CONFIG.COLORS.water;
-  ctx.fillRect(CONFIG.BEACH_X * CONFIG.TILE * sx, 0, w, h);
-  ctx.fillStyle = "#888";
-  for (const r of state.city.roads) ctx.fillRect(r.x * CONFIG.TILE * sx, r.y * CONFIG.TILE * sy, 2, 2);
-  if (state.objective) {
-    ctx.fillStyle = "#ffd23f";
-    ctx.fillRect(state.objective.x * sx - 3, state.objective.y * sy - 3, 6, 6);
+
+function drawMinimap(canvas, state) {
+  const ctx = canvas.getContext("2d");
+  const sx = canvas.width / CONFIG.worldWidth;
+  const sy = canvas.height / CONFIG.worldHeight;
+  ctx.fillStyle = "#1c2b22";
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.fillStyle = "#3a4a42";
+  for (const b of state.city.buildings) {
+    ctx.fillRect(b.x * sx, b.y * sy, Math.max(1, b.w * sx), Math.max(1, b.h * sy));
   }
-  for (const cop of state.police.cops) { ctx.fillStyle = "#4da3ff"; ctx.fillRect(cop.x * sx - 2, cop.y * sy - 2, 4, 4); }
-  ctx.fillStyle = "#ffffff";
-  ctx.fillRect(state.player.x * sx - 3, state.player.y * sy - 3, 6, 6);
+  ctx.fillStyle = "#2e6f9e";
+  ctx.fillRect(0, canvas.height - 16, canvas.width, 16);
+  ctx.fillStyle = "#ffd23f";
+  ctx.beginPath();
+  ctx.arc(state.player.x * sx, state.player.y * sy, 3, 0, Math.PI * 2);
+  ctx.fill();
+  const mission = currentMission(state.missions);
+  if (mission) {
+    ctx.fillStyle = "#ff5964";
+    ctx.beginPath();
+    ctx.arc(mission.target.x * sx, mission.target.y * sy, 3, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.fillStyle = "#7fb3ff";
+  for (const car of state.police.cars) {
+    ctx.fillRect(car.x * sx - 2, car.y * sy - 2, 4, 4);
+  }
 }

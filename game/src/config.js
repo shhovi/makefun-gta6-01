@@ -1,39 +1,40 @@
-// Pure world constants. No DOM access in this module.
 export const CONFIG = {
-  TILE: 32,
-  GRID_W: 60,
-  GRID_H: 60,
-  WORLD_W: 1920,
-  WORLD_H: 1920,
-  BLOCK: 6,
-  ROAD_EVERY: 6,
-  BEACH_X: 52, // tiles at/after this x are beach, then water
-  PLAYER_SPEED: 2.4,
-  PLAYER_RUN: 3.6,
-  CAR_ACCEL: 0.12,
-  CAR_BRAKE: 0.2,
-  CAR_MAX_SPEED: 6,
-  CAR_STEER: 0.045,
-  TRAFFIC_SPEED: 1.6,
-  PED_SPEED: 0.7,
-  POLICE_SPEED: 3.1,
-  PUNCH_RANGE: 26,
-  PUNCH_DAMAGE: 12,
-  PISTOL_DAMAGE: 25,
-  PISTOL_RANGE: 260,
-  MAX_HEALTH: 100,
-  COLORS: {
-    water: "#1b6ca8",
-    beach: "#e8d28a",
-    road: "#33383f",
-    sidewalk: "#9aa0a6",
-    grass: "#3f9e57",
-    building: "#b5654d",
-    building2: "#5d7fa3",
-    player: "#ffd23f",
-    police: "#2456c8",
-    ped: "#f2f2f2",
-    car: "#c83a32",
-  },
+  worldWidth: 1920,
+  worldHeight: 1440,
+  tileSize: 48,
+  gridCols: 40,
+  gridRows: 30,
+  canvasWidth: 960,
+  canvasHeight: 600,
+  playerSpeed: 3.2,
+  playerSprint: 4.6,
+  playerRadius: 10,
+  carMaxSpeed: 9,
+  carAccel: 0.22,
+  carFriction: 0.96,
+  carTurn: 0.045,
+  trafficCount: 10,
+  pedCount: 14,
+  policeBase: 2,
+  maxWanted: 5,
+  punchRange: 26,
+  punchDamage: 12,
+  pistolRange: 240,
+  pistolDamage: 25,
+  startHealth: 100,
+  startMoney: 250,
+  seed: 1337,
+  version: "round6",
 };
-export const TILE_TYPES = { GRASS: 0, ROAD: 1, BUILDING: 2, BEACH: 3, WATER: 4, SIDEWALK: 5 };
+
+export function clamp(value, min, max) {
+  if (value < min) return min;
+  if (value > max) return max;
+  return value;
+}
+
+export function dist2(ax, ay, bx, by) {
+  const dx = ax - bx;
+  const dy = ay - by;
+  return dx * dx + dy * dy;
+}

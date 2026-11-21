@@ -1,37 +1,69 @@
-// Combat: punch and pistol, damage and reactions.
 import { CONFIG } from "./config.js";
 
-export function tryPunch(player, peds, police, now) {
-  let hit = false;
-  const targets = peds.concat(police ? police.cops : []);
-  for (const t of targets) {
-    const d = Math.hypot(t.x - player.x, t.y - player.y);
-    if (d < CONFIG.PUNCH_RANGE) {
-      t.health = (t.health === undefined ? 40 : t.health) - CONFIG.PUNCH_DAMAGE;
-      if (t.health <= 0) t.alive = false;
-      hit = true;
+export function createBullets() {
+  return [];
+}
+
+export function tryPunch(player, peds, police) {
+  if (player.inVehicle || player.punchCooldown > 0) return false;
+  player.punchCooldown = 0.35;
+  player.lastPunchAt = Date.now();
+  const fx = player.x + Math.cos(player.angle) * CONFIG.punchRange;
+  const fy = player.y + Math.sin(player.angle) * CONFIG.punchRange;
+  for (const ped of peds) {
+    if (ped.dead) continue;
+    const dx = ped.x - fx;
+    const dy = ped.y - fy;
+    if (dx * dx + dy * dy < 22 * 22) {
+      ped.health -= CONFIG.punchDamage;
+      ped.state = "flee";
+      if (ped.health <= 0) {
+        ped.dead = true;
+        player.money += 15;
+      }
+      return true;
     }
   }
-  return hit;
+  return false;
 }
-export function tryShoot(player, aimX, aimY, peds, police) {
-  const angle = Math.atan2(aimY - player.y, aimX - player.x);
-  const targets = peds.concat(police ? police.cops : []);
-  let best = null, bestD = CONFIG.PISTOL_RANGE;
-  for (const t of targets) {
-    if (t.alive === false) continue;
-    const d = Math.hypot(t.x - player.x, t.y - player.y);
-    const ta = Math.atan2(t.y - player.y, t.x - player.x);
-    let diff = Math.abs(ta - angle);
-    if (diff > Math.PI) diff = Math.PI * 2 - diff;
-    if (d < bestD && diff < 0.25) { best = t; bestD = d; }
-  }
-  if (best) {
-    best.health = (best.health === undefined ? 40 : best.health) - CONFIG.PISTOL_DAMAGE;
-    if (best.health <= 0) best.alive = false;
-  }
-  return { fired: true, hit: !!best, angle: angle };
+
+export function tryShoot(player, bullets, aimAngle) {
+  if (player.inVehicle || player.shootCooldown > 0) return false;
+  player.shootCooldown = 0.28;
+  bullets.push({
+    x: player.x + Math.cos(aimAngle) * 14,
+    y: player.y + Math.sin(aimAngle) * 14,
+    vx: Math.cos(aimAngle) * 520,
+    vy: Math.sin(aimAngle) * 520,
+    life: CONFIG.pistolRange / 520,
+  });
+  return true;
 }
-export function rewardForDown(t) { return t && t.alive === false ? 25 : 0; }
-export function punchCooldownMs() { return 280; }
-export function pistolCooldownMs() { return 220; }
+
+export function updateBullets(bullets, peds, player, dt) {
+  for (let i = bullets.length - 1; i >= 0; i--) {
+    const b = bullets[i];
+    b.x += b.vx * dt;
+    b.y += b.vy * dt;
+    b.life -= dt;
+    if (b.life <= 0) {
+      bullets.splice(i, 1);
+      continue;
+    }
+    for (const ped of peds) {
+      if (ped.dead) continue;
+      const dx = ped.x - b.x;
+      const dy = ped.y - b.y;
+      if (dx * dx + dy * dy < 12 * 12) {
+        ped.health -= CONFIG.pistolDamage;
+        ped.state = "flee";
+        if (ped.health <= 0) {
+          ped.dead = true;
+          player.money += 25;
+        }
+        bullets.splice(i, 1);
+        break;
+      }
+    }
+  }
+}

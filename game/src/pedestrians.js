@@ -1,43 +1,50 @@
-// Pedestrians: wander the sidewalks, flee when shots are fired.
-import { CONFIG } from "./config.js";
-import { isBlocked } from "./city.js";
+import { CONFIG, clamp } from "./config.js";
 
-export function spawnPeds(city, rng, count) {
+const COLORS = ["#f1fa8c", "#8be9fd", "#ff79c6", "#50fa7b", "#ffb86b", "#bd93f9"];
+
+export function createPedestrians(city, rng) {
   const peds = [];
-  const colors = ["#f2f2f2", "#f2c14e", "#7fc8f8", "#f88fb1", "#b8f88f"];
-  for (let i = 0; i < count; i++) {
+  for (let i = 0; i < CONFIG.pedCount; i++) {
+    const road = city.roads[Math.floor(rng() * city.roads.length)];
     peds.push({
-      x: 64 + rng() * (CONFIG.WORLD_W - 400),
-      y: 64 + rng() * (CONFIG.WORLD_H - 128),
+      x: road.x + 12 + rng() * 24,
+      y: road.y + 12 + rng() * 24,
       angle: rng() * Math.PI * 2,
-      speed: CONFIG.PED_SPEED,
-      color: colors[i % colors.length],
-      health: 40, fleeUntil: 0, alive: true,
+      speed: 0.8 + rng() * 0.7,
+      health: 30,
+      color: COLORS[i % COLORS.length],
+      state: "wander",
+      timer: rng() * 3,
+      dead: false,
+      homeRoad: road.cx + "," + road.cy,
     });
   }
   return peds;
 }
-export function updatePeds(peds, city, now, threat) {
-  const T = CONFIG.TILE;
+
+export function updatePedestrians(peds, player, threat, rng, dt) {
   for (const ped of peds) {
-    if (!ped.alive) continue;
-    let speed = ped.speed;
-    if (now < ped.fleeUntil && threat) {
-      ped.angle = Math.atan2(ped.y - threat.y, ped.x - threat.x);
-      speed = ped.speed * 2.6;
-    } else if (Math.random() < 0.01) {
-      ped.angle += (Math.random() - 0.5) * 1.2;
+    if (ped.dead) continue;
+    ped.timer -= dt;
+    let fleeing = false;
+    if (threat) {
+      const dx = ped.x - threat.x;
+      const dy = ped.y - threat.y;
+      if (dx * dx + dy * dy < 120 * 120) {
+        ped.state = "flee";
+        ped.angle = Math.atan2(dy, dx);
+        fleeing = true;
+      }
     }
-    const nx = ped.x + Math.cos(ped.angle) * speed;
-    const ny = ped.y + Math.sin(ped.angle) * speed;
-    if (!isBlocked(city, Math.floor(nx / T), Math.floor(ny / T))) { ped.x = nx; ped.y = ny; }
-    else ped.angle += Math.PI / 2;
-  }
-  return peds;
-}
-export function alivePeds(peds) { return peds.filter(function (p) { return p.alive; }).length; }
-export function scarePeds(peds, x, y, radius, now) {
-  for (const ped of peds) {
-    if (Math.hypot(ped.x - x, ped.y - y) < radius) ped.fleeUntil = now + 3000;
+    if (!fleeing && ped.timer <= 0) {
+      ped.state = "wander";
+      ped.angle = rng() * Math.PI * 2;
+      ped.timer = 1 + rng() * 3;
+    }
+    const speed = ped.state === "flee" ? ped.speed * 2.2 : ped.speed;
+    ped.x += Math.cos(ped.angle) * speed * dt * 60 * 0.16;
+    ped.y += Math.sin(ped.angle) * speed * dt * 60 * 0.16;
+    ped.x = clamp(ped.x, 16, CONFIG.worldWidth - 16);
+    ped.y = clamp(ped.y, 16, CONFIG.worldHeight - 16);
   }
 }

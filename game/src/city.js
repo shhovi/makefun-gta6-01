@@ -1,63 +1,76 @@
-// Pure seeded coastal city generation. No DOM access in this module.
-import { CONFIG, TILE_TYPES } from "./config.js";
+import { CONFIG } from "./config.js";
 import { mulberry32, randInt, pick } from "./random.js";
+
+const BUILDING_COLORS = ["#c96f4a", "#7a9e7e", "#5b8e7d", "#d9c5a0", "#8d6e63", "#6d8ea0", "#b56576"];
 
 export function generateCity(seed) {
   const rng = mulberry32(seed);
-  const W = CONFIG.GRID_W;
-  const H = CONFIG.GRID_H;
-  const grid = [];
+  const cols = CONFIG.gridCols;
+  const rows = CONFIG.gridRows;
+  const tile = CONFIG.tileSize;
+  const cells = [];
+  for (let y = 0; y < rows; y++) {
+    const row = [];
+    for (let x = 0; x < cols; x++) {
+      const isRoad = x % 6 === 0 || y % 6 === 0;
+      const isWater = y >= rows - 3;
+      const isSand = y === rows - 4;
+      let kind = "block";
+      if (isWater) kind = "water";
+      else if (isSand) kind = "sand";
+      else if (isRoad) kind = "road";
+      row.push(kind);
+    }
+    cells.push(row);
+  }
   const roads = [];
   const buildings = [];
-  for (let y = 0; y < H; y++) {
-    const row = [];
-    for (let x = 0; x < W; x++) {
-      let t = TILE_TYPES.GRASS;
-      if (x >= CONFIG.BEACH_X + 3) t = TILE_TYPES.WATER;
-      else if (x >= CONFIG.BEACH_X) t = TILE_TYPES.BEACH;
-      else if (x % CONFIG.ROAD_EVERY === 0 || y % CONFIG.ROAD_EVERY === 0) t = TILE_TYPES.ROAD;
-      row.push(t);
-      if (t === TILE_TYPES.ROAD) roads.push({ x: x, y: y });
-    }
-    grid.push(row);
-  }
-  const palette = [CONFIG.COLORS.building, CONFIG.COLORS.building2, "#8a6db5", "#4da38a"];
-  for (let by = 1; by < H - 2; by += CONFIG.BLOCK) {
-    for (let bx = 1; bx < CONFIG.BEACH_X - 2; bx += CONFIG.BLOCK) {
-      if (rng() < 0.18) continue;
-      const bw = randInt(rng, 2, 4);
-      const bh = randInt(rng, 2, 4);
-      const color = pick(rng, palette);
-      for (let y = by; y < Math.min(by + bh, H); y++) {
-        for (let x = bx; x < Math.min(bx + bw, W); x++) grid[y][x] = TILE_TYPES.BUILDING;
+  for (let y = 0; y < rows; y++) {
+    for (let x = 0; x < cols; x++) {
+      const kind = cells[y][x];
+      if (kind === "road") {
+        roads.push({ x: x * tile, y: y * tile, w: tile, h: tile, cx: x, cy: y });
+      } else if (kind === "block" && rng() > 0.25) {
+        const w = tile * randInt(rng, 1, 2);
+        const h = tile * randInt(rng, 1, 2);
+        buildings.push({
+          x: x * tile + 4,
+          y: y * tile + 4,
+          w: Math.max(24, w - 8),
+          h: Math.max(24, h - 8),
+          color: pick(rng, BUILDING_COLORS),
+          height: randInt(rng, 1, 5),
+        });
       }
-      buildings.push({ x: bx, y: by, w: bw, h: bh, color: color });
     }
   }
   const stats = {
-    seed: seed,
-    gridW: W,
-    gridH: H,
+    seed,
     roadTiles: roads.length,
     buildingCount: buildings.length,
-    worldW: CONFIG.WORLD_W,
-    worldH: CONFIG.WORLD_H,
+    waterRows: 3,
+    coastal: true,
   };
-  return { grid: grid, roads: roads, buildings: buildings, stats: stats };
+  return {
+    grid: { width: cols, height: rows, tileSize: tile, cells },
+    roads,
+    buildings,
+    stats,
+  };
 }
-export function tileAt(city, x, y) {
-  if (!city || y < 0 || y >= city.grid.length) return TILE_TYPES.WATER;
-  const row = city.grid[y];
-  if (x < 0 || x >= row.length) return TILE_TYPES.WATER;
-  return row[x];
+
+export function isRoadAt(city, wx, wy) {
+  const tx = Math.floor(wx / city.grid.tileSize);
+  const ty = Math.floor(wy / city.grid.tileSize);
+  if (tx < 0 || ty < 0 || tx >= city.grid.width || ty >= city.grid.height) return false;
+  return city.grid.cells[ty][tx] === "road";
 }
-export function isRoad(city, x, y) {
-  return tileAt(city, x, y) === TILE_TYPES.ROAD;
-}
-export function isWater(city, x, y) {
-  return tileAt(city, x, y) === TILE_TYPES.WATER;
-}
-export function isBlocked(city, x, y) {
-  const t = tileAt(city, x, y);
-  return t === TILE_TYPES.BUILDING || t === TILE_TYPES.WATER;
+
+export function collidesBuilding(city, wx, wy, radius) {
+  for (const b of city.buildings) {
+    if (wx + radius > b.x && wx - radius < b.x + b.w && wy + radius > b.y && wy - radius < b.y + b.h) {
+      return true;
+    }
+  }
+  return false;
 }
