@@ -1,106 +1,40 @@
-// WebAudio synth sound effects: engine, siren, gunshot, punch, pickup.
-// No audio files — every sound is generated with oscillators/noise.
-// The AudioContext is created lazily on the first user gesture.
-
-export class GameAudio {
-  constructor() {
-    this.ctx = null;
-    this.engineOsc = null;
-    this.engineGain = null;
-    this.sirenOsc = null;
-    this.sirenGain = null;
-  }
-
-  ensure() {
-    if (this.ctx) return true;
-    const AC = window.AudioContext || window.webkitAudioContext;
-    if (!AC) return false;
-    this.ctx = new AC();
-    return true;
-  }
-
-  blip(freq, dur, type = "square", gainValue = 0.12, slideTo = null) {
-    if (!this.ensure()) return;
-    const t = this.ctx.currentTime;
-    const osc = this.ctx.createOscillator();
-    const gain = this.ctx.createGain();
-    osc.type = type;
-    osc.frequency.setValueAtTime(freq, t);
-    if (slideTo) osc.frequency.exponentialRampToValueAtTime(slideTo, t + dur);
-    gain.gain.setValueAtTime(gainValue, t);
-    gain.gain.exponentialRampToValueAtTime(0.001, t + dur);
-    osc.connect(gain).connect(this.ctx.destination);
-    osc.start(t);
-    osc.stop(t + dur);
-  }
-
-  noise(dur, gainValue = 0.2) {
-    if (!this.ensure()) return;
-    const t = this.ctx.currentTime;
-    const len = Math.floor(this.ctx.sampleRate * dur);
-    const buffer = this.ctx.createBuffer(1, len, this.ctx.sampleRate);
-    const data = buffer.getChannelData(0);
-    for (let i = 0; i < len; i++) data[i] = (Math.random() * 2 - 1) * (1 - i / len);
-    const src = this.ctx.createBufferSource();
-    src.buffer = buffer;
-    const gain = this.ctx.createGain();
-    gain.gain.value = gainValue;
-    src.connect(gain).connect(this.ctx.destination);
-    src.start(t);
-  }
-
-  gunshot() {
-    this.noise(0.16, 0.3);
-    this.blip(180, 0.1, "square", 0.08, 60);
-  }
-
-  punch() {
-    this.noise(0.08, 0.16);
-    this.blip(120, 0.08, "sine", 0.14, 55);
-  }
-
-  pickup() {
-    this.blip(880, 0.09, "sine", 0.12);
-    setTimeout(() => this.blip(1320, 0.12, "sine", 0.12), 70);
-  }
-
-  setEngine(running, speedRatio = 0) {
-    if (!running) {
-      if (this.engineOsc) {
-        try { this.engineOsc.stop(); } catch { /* already stopped */ }
-        this.engineOsc = null;
-      }
-      return;
+// WebAudio synthesized sound: engine, siren, gunshot, punch, pickup.
+export function createAudio() {
+  let ctx = null;
+  let engineOsc = null;
+  function ensure() {
+    if (!ctx) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return null;
+      ctx = new AC();
     }
-    if (!this.ensure()) return;
-    if (!this.engineOsc) {
-      this.engineOsc = this.ctx.createOscillator();
-      this.engineGain = this.ctx.createGain();
-      this.engineOsc.type = "sawtooth";
-      this.engineGain.gain.value = 0.045;
-      this.engineOsc.connect(this.engineGain).connect(this.ctx.destination);
-      this.engineOsc.start();
-    }
-    this.engineOsc.frequency.value = 55 + Math.abs(speedRatio) * 130;
+    if (ctx.state === "suspended") ctx.resume();
+    return ctx;
   }
-
-  setSiren(active, timeMs) {
-    if (!active) {
-      if (this.sirenOsc) {
-        try { this.sirenOsc.stop(); } catch { /* already stopped */ }
-        this.sirenOsc = null;
-      }
-      return;
-    }
-    if (!this.ensure()) return;
-    if (!this.sirenOsc) {
-      this.sirenOsc = this.ctx.createOscillator();
-      this.sirenGain = this.ctx.createGain();
-      this.sirenOsc.type = "triangle";
-      this.sirenGain.gain.value = 0.035;
-      this.sirenOsc.connect(this.sirenGain).connect(this.ctx.destination);
-      this.sirenOsc.start();
-    }
-    this.sirenOsc.frequency.value = Math.floor(timeMs / 350) % 2 === 0 ? 700 : 950;
+  function blip(freq, dur, type, gain) {
+    const c = ensure(); if (!c) return;
+    const o = c.createOscillator(); const g = c.createGain();
+    o.type = type || "square"; o.frequency.value = freq;
+    g.gain.value = gain || 0.08;
+    o.connect(g); g.connect(c.destination);
+    o.start(); g.gain.exponentialRampToValueAtTime(0.001, c.currentTime + dur);
+    o.stop(c.currentTime + dur);
   }
+  return {
+    unlock: function () { ensure(); },
+    gunshot: function () { blip(160, 0.12, "sawtooth", 0.18); },
+    punch: function () { blip(90, 0.08, "square", 0.12); },
+    pickup: function () { blip(880, 0.15, "sine", 0.1); },
+    missionDone: function () { blip(660, 0.12, "sine", 0.1); blip(990, 0.18, "sine", 0.08); },
+    siren: function () { blip(700, 0.2, "triangle", 0.06); },
+    engine: function (on) {
+      const c = ensure(); if (!c) return;
+      if (on && !engineOsc) {
+        engineOsc = c.createOscillator();
+        engineOsc.type = "sawtooth"; engineOsc.frequency.value = 60;
+        const g = c.createGain(); g.gain.value = 0.03;
+        engineOsc.connect(g); g.connect(c.destination); engineOsc.start();
+      } else if (!on && engineOsc) { try { engineOsc.stop(); } catch (e) {} engineOsc = null; }
+    },
+  };
 }

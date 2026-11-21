@@ -1,222 +1,125 @@
-// Solar Bay: Outlaw — game loop and menu state machine (title/playing/paused/busted/wasted).
-// Wires every module together: city, player, traffic, peds, police,
-// combat, missions, HUD, audio, saves and screenshot mode.
-
-import { DEFAULT_SEED, CAR_MAX_SPEED, COLORS } from "./config.js";
-import { makeRng } from "./random.js";
+// Game loop and menu state machine wiring all modules together.
+import { CONFIG } from "./config.js";
+import { mulberry32 } from "./random.js";
 import { generateCity } from "./city.js";
-import { drawWorld, drawCar, drawPerson, drawMarker, cameraFor } from "./render.js";
-import { Input } from "./input.js";
-import { createPlayer, updatePlayer, toggleVehicle } from "./player.js";
-import { driveVehicle, createVehicle } from "./vehicles.js";
+import { drawWorld } from "./render.js";
+import { createInput } from "./input.js";
+import { createPlayer, updatePlayer, nearestVehicle, damagePlayer } from "./player.js";
+import { createVehicle, updateVehicle, stopVehicle } from "./vehicles.js";
 import { spawnTraffic, updateTraffic } from "./traffic.js";
-import { spawnPedestrians, updatePedestrians } from "./pedestrians.js";
-import { createWanted, updateWanted, spawnPolice, updatePolice, checkOutcome } from "./police.js";
-import { punch, shoot } from "./combat.js";
-import { createMissionState, currentMission, updateMissions } from "./missions.js";
+import { spawnPeds, updatePeds, scarePeds } from "./pedestrians.js";
+import { createPoliceState, addHeat, decayHeat, updatePolice, clearWanted } from "./police.js";
+import { tryPunch, tryShoot } from "./combat.js";
+import { createMissionState, currentObjective, checkMission, MISSIONS } from "./missions.js";
 import { updateHud, drawMinimap } from "./hud.js";
-import { GameAudio } from "./audio.js";
+import { createAudio } from "./audio.js";
 import { saveGame, loadGame, applySave } from "./save.js";
-import { loadShots, shotFromUrl, findScene, applyScene } from "./shots.js";
+import { parseShotParams, loadShots, applyShot, findShot } from "./shots.js";
 
 const canvas = document.getElementById("game");
 const ctx = canvas.getContext("2d");
-const minimap = document.getElementById("minimap");
-const minimapCtx = minimap.getContext("2d");
-
+const minimapCtx = document.getElementById("minimap").getContext("2d");
 const els = {
-  wanted: document.getElementById("wanted"),
-  health: document.getElementById("health"),
-  money: document.getElementById("money"),
-  objective: document.getElementById("objective"),
-  dialog: document.getElementById("dialog"),
+  stars: document.getElementById("stars"),
+  stats: document.getElementById("stats"),
+  mission: document.getElementById("mission"),
 };
-
 const screens = {
   title: document.getElementById("title"),
   pause: document.getElementById("pause"),
   busted: document.getElementById("busted"),
   wasted: document.getElementById("wasted"),
 };
-
 function showScreen(name) {
-  for (const [key, el] of Object.entries(screens)) {
-    el.classList.toggle("visible", key === name);
-  }
+  for (const k in screens) screens[k].classList.toggle("on", k === name);
 }
-
+const shotParams = parseShotParams(window.location.search);
+const seed = shotParams.seed || 1337;
+const rng = mulberry32(seed);
+const city = generateCity(seed);
+const player = createPlayer(320, 320);
+const parked = [createVehicle(352, 320, "#3a7fc8"), createVehicle(640, 352, "#e0a832"), createVehicle(960, 320, "#58a65c")];
 const state = {
-  mode: "title", // title | playing | paused | busted | wasted
-  seed: DEFAULT_SEED,
-  timeOfDay: "day",
-  city: null,
-  rng: null,
-  player: null,
-  traffic: [],
-  peds: [],
-  police: [],
-  wanted: createWanted(),
-  missionState: createMissionState(),
-  shot: null,
-  saveTimer: 0,
+  seed: seed, city: city, player: player, playerVehicle: null,
+  traffic: spawnTraffic(city, rng, 14),
+  peds: spawnPeds(city, rng, 24),
+  police: createPoliceState(),
+  missions: createMissionState(),
+  objective: null, mode: "title", timeOfDay: "day", shotMode: false,
 };
-
-const input = new Input(canvas);
-const audio = new GameAudio();
-
-function newGame(seed, scene) {
-  state.seed = seed;
-  state.rng = makeRng(seed);
-  state.city = generateCity(seed);
-  state.player = createPlayer(640, 360);
-  state.wanted = createWanted();
-  state.missionState = createMissionState();
-  state.missionState.dialogTimer = 8;
-  state.traffic = spawnTraffic(state.city, state.rng, 14);
-  state.peds = spawnPedestrians(state.city, state.rng, 22);
-  state.police = [];
-  state.shot = null;
-  state.timeOfDay = "day";
-
-  if (scene) {
-    applyScene(state, scene);
-    if (scene.player.inVehicle) {
-      const car = createVehicle(state.player.x, state.player.y, 0, state.rng.pick(COLORS.car));
-      car.driver = state.player;
-      state.player.vehicle = car;
-      state.traffic.push(car);
-    }
-    if (state.wanted.level > 0) {
-      state.police = spawnPolice(state.city, state.rng, state.wanted.level);
-    }
-  } else {
-    const saved = loadGame();
-    if (saved) applySave(state, saved);
+state.objective = currentObjective(state.missions);
+const saved = loadGame();
+if (saved && !shotParams.shot) { applySave(state, saved); state.missions.active = MISSIONS[state.missions.index] || null; state.objective = currentObjective(state.missions); }
+const input = createInput(canvas);
+const audio = createAudio();
+loadShots("../shots.json").then(function (scenes) {
+  if (shotParams.shot) {
+    const scene = findShot(scenes, shotParams.shot);
+    if (scene) { applyShot(state, scene); state.mode = "playing"; showScreen(null); }
   }
+});
+document.getElementById("startBtn").addEventListener("click", function () {
+  audio.unlock(); state.mode = "playing"; showScreen(null);
+});
+for (const btn of document.querySelectorAll("[data-restart]")) {
+  btn.addEventListener("click", function () { respawn(); });
 }
-
-function startPlaying() {
-  state.mode = "playing";
-  showScreen(null);
-  audio.ensure();
+function respawn() {
+  player.health = CONFIG.MAX_HEALTH; player.alive = true;
+  player.x = 320; player.y = 320; player.vehicle = null; state.playerVehicle = null;
+  clearWanted(state.police); state.mode = "playing"; showScreen(null);
 }
-
-function endGame(outcome) {
-  state.mode = outcome;
-  showScreen(outcome);
-  audio.setEngine(false);
-  audio.setSiren(false, 0);
-}
-
-function step(dt, timeMs) {
-  const player = state.player;
-
-  if (input.wasPressed("e")) {
-    toggleVehicle(player, [...state.traffic, ...state.police]);
-  }
-  if (input.wasPressed("f")) {
-    punch(player, state.peds, state.wanted, audio);
-  }
-
-  updatePlayer(player, input, state.city, dt);
-  if (player.vehicle) {
-    driveVehicle(player.vehicle, input, state.city, dt);
-    audio.setEngine(true, player.vehicle.speed / CAR_MAX_SPEED);
-  } else {
-    audio.setEngine(false);
-  }
-
-  if (input.mouse.clicked) {
-    const cam = cameraFor(player, canvas.width, canvas.height);
-    shoot(player, input.mouse.x + cam.x, input.mouse.y + cam.y, state.peds, state.traffic, state.wanted, audio);
-  }
-
-  updateTraffic(state.traffic, state.city, state.rng, dt);
-  updatePedestrians(state.peds, state.rng, dt);
-
-  const wantedBefore = state.wanted.level;
-  updateWanted(state.wanted, dt, state.police.length > 0 && state.wanted.level > 0);
-  if (state.wanted.level !== wantedBefore || (state.wanted.level > 0 && state.police.length === 0)) {
-    state.police = state.wanted.level > 0 ? spawnPolice(state.city, state.rng, state.wanted.level) : [];
-  }
-  const nearestPolice = state.police.length ? updatePolice(state.police, player, state.city, dt, timeMs) : Infinity;
-  audio.setSiren(state.police.length > 0, timeMs);
-
-  const missionEvent = updateMissions(state.missionState, player, state.wanted, dt);
-  if (missionEvent) audio.pickup();
-
-  const outcome = checkOutcome(state.wanted, player, nearestPolice, dt);
-  if (outcome) endGame(outcome);
-
-  state.saveTimer += dt;
-  if (state.saveTimer > 5) {
-    state.saveTimer = 0;
-    saveGame(state);
-  }
-}
-
-function render(timeMs) {
-  const player = state.player;
-  const cam = cameraFor(player, canvas.width, canvas.height);
-  drawWorld(ctx, state.city, cam, canvas.width, canvas.height);
-
-  const mission = currentMission(state.missionState);
-  if (mission) drawMarker(ctx, mission.marker.x, mission.marker.y, cam);
-
-  for (const car of state.traffic) drawCar(ctx, car, cam);
-  for (const car of state.police) drawCar(ctx, car, cam);
-  for (const ped of state.peds) {
-    if (ped.health > 0) drawPerson(ctx, ped, cam, ped.color);
-  }
-  if (!player.vehicle) drawPerson(ctx, player, cam, COLORS.player);
-
-  if (state.timeOfDay === "dusk") {
-    ctx.fillStyle = "rgba(255,140,60,.14)";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-  }
-
-  updateHud(els, player, state.wanted, mission, state.missionState);
-  drawMinimap(minimapCtx, state.city, player, mission, state.police, 160);
-  void timeMs;
-}
-
 let last = performance.now();
+let sirenTimer = 0;
 function frame(now) {
-  const dt = Math.min(0.05, (now - last) / 1000);
-  last = now;
-
-  if (state.mode === "playing") {
-    if (input.wasPressed("p") || input.wasPressed("escape")) {
-      state.mode = "paused";
-      showScreen("pause");
-    } else {
-      step(dt, now);
+  requestAnimationFrame(frame);
+  const dt = Math.min(50, now - last); last = now;
+  if (input.wasPressed("escape")) {
+    if (state.mode === "playing") { state.mode = "pause"; showScreen("pause"); }
+    else if (state.mode === "pause") { state.mode = "playing"; showScreen(null); }
+  }
+  if (state.mode !== "playing") { render(); return; }
+  if (input.wasPressed("e")) {
+    if (player.vehicle) { stopVehicle(player.vehicle); player.vehicle = null; state.playerVehicle = null; audio.engine(false); }
+    else {
+      const v = nearestVehicle(player, parked.concat(state.traffic), 52);
+      if (v) { player.vehicle = v; state.playerVehicle = v; audio.engine(true); }
     }
-  } else if (state.mode === "paused") {
-    if (input.wasPressed("p") || input.wasPressed("escape")) startPlaying();
   }
-
-  if (state.city) render(now);
-  input.endFrame();
-  requestAnimationFrame(frame);
+  if (player.vehicle) updateVehicle(player.vehicle, input);
+  updatePlayer(player, input, city);
+  updateTraffic(state.traffic, city, rng);
+  updatePeds(state.peds, city, now, player);
+  if (input.wasPressed("f")) {
+    if (tryPunch(player, state.peds, state.police, now)) { audio.punch(); addHeat(state.police, 35); scarePeds(state.peds, player.x, player.y, 140, now); }
+  }
+  if (input.wasPressed("mouse")) {
+    const cam = camera();
+    const res = tryShoot(player, input.mouseX + cam.x, input.mouseY + cam.y, state.peds, state.police);
+    audio.gunshot(); scarePeds(state.peds, player.x, player.y, 260, now);
+    addHeat(state.police, res.hit ? 120 : 60);
+  }
+  decayHeat(state.police, dt);
+  const pol = updatePolice(state.police, player, rng, now);
+  if (state.police.wanted > 0) { sirenTimer += dt; if (sirenTimer > 900) { audio.siren(); sirenTimer = 0; } }
+  if (pol.busted) { state.mode = "busted"; showScreen("busted"); saveGame(state); }
+  if (!player.alive || player.health <= 0) { state.mode = "wasted"; showScreen("wasted"); }
+  const done = checkMission(state.missions, player, state.police.wanted);
+  if (done) { audio.missionDone(); saveGame(state); }
+  state.objective = currentObjective(state.missions);
+  if (input.wasPressed("k")) saveGame(state);
+  render();
 }
-
-document.getElementById("startBtn").addEventListener("click", startPlaying);
-document.getElementById("resumeBtn").addEventListener("click", startPlaying);
-document.getElementById("bustedBtn").addEventListener("click", () => { newGame(state.seed, null); startPlaying(); });
-document.getElementById("wastedBtn").addEventListener("click", () => { newGame(state.seed, null); startPlaying(); });
-
-// Boot: deterministic screenshot mode if ?shot= is present.
-(async () => {
-  const shotName = shotFromUrl();
-  if (shotName) {
-    const scenes = await loadShots();
-    const scene = findScene(scenes, shotName);
-    newGame(scene?.seed ?? DEFAULT_SEED, scene);
-    startPlaying();
-  } else {
-    newGame(DEFAULT_SEED, null);
-    showScreen("title");
-  }
-  requestAnimationFrame(frame);
-})();
+function camera() {
+  return {
+    x: Math.max(0, Math.min(CONFIG.WORLD_W - canvas.width, player.x - canvas.width / 2)),
+    y: Math.max(0, Math.min(CONFIG.WORLD_H - canvas.height, player.y - canvas.height / 2)),
+  };
+}
+function render() {
+  const view = { city: city, traffic: state.traffic, police: state.police.cops, peds: state.peds, player: player, playerVehicle: state.playerVehicle, objective: state.objective };
+  drawWorld(ctx, view, camera());
+  updateHud(els, state);
+  drawMinimap(minimapCtx, state);
+}
+requestAnimationFrame(frame);

@@ -1,37 +1,39 @@
-// Solar Bay: Outlaw — shared world constants.
-
-export const TILE = 32;
-export const GRID_W = 80;
-export const GRID_H = 60;
-export const WORLD_W = TILE * GRID_W;
-export const WORLD_H = TILE * GRID_H;
-
-export const PLAYER_SPEED = 180; // px per second on foot
-export const PLAYER_RUN = 260;
-export const CAR_ACCEL = 320;
-export const CAR_BRAKE = 420;
-export const CAR_MAX_SPEED = 420;
-export const CAR_TURN = 2.6; // radians per second at speed
-export const POLICE_SPEED = 400;
-
-export const MAX_WANTED = 5;
-export const WANTED_DECAY_SECONDS = 18;
-
-export const COLORS = {
-  road: "#3c4046",
-  roadLine: "#d8d8c8",
-  grass: "#4a7c4f",
-  sand: "#e6cf9a",
-  water: "#2e6fb0",
-  sidewalk: "#9aa0a6",
-  building: ["#8d6e63", "#a1887f", "#90a4ae", "#b0bec5", "#c9a86a"],
-  player: "#ffd23f",
-  police: "#2456c8",
-  policeStripe: "#ffffff",
-  ped: ["#e57373", "#64b5f6", "#81c784", "#ffb74d", "#ba68c8"],
-  car: ["#c0392b", "#2980b9", "#27ae60", "#f39c12", "#7f8c8d", "#8e44ad"],
+// Pure world constants. No DOM access in this module.
+export const CONFIG = {
+  TILE: 32,
+  GRID_W: 60,
+  GRID_H: 60,
+  WORLD_W: 1920,
+  WORLD_H: 1920,
+  BLOCK: 6,
+  ROAD_EVERY: 6,
+  BEACH_X: 52, // tiles at/after this x are beach, then water
+  PLAYER_SPEED: 2.4,
+  PLAYER_RUN: 3.6,
+  CAR_ACCEL: 0.12,
+  CAR_BRAKE: 0.2,
+  CAR_MAX_SPEED: 6,
+  CAR_STEER: 0.045,
+  TRAFFIC_SPEED: 1.6,
+  PED_SPEED: 0.7,
+  POLICE_SPEED: 3.1,
+  PUNCH_RANGE: 26,
+  PUNCH_DAMAGE: 12,
+  PISTOL_DAMAGE: 25,
+  PISTOL_RANGE: 260,
+  MAX_HEALTH: 100,
+  COLORS: {
+    water: "#1b6ca8",
+    beach: "#e8d28a",
+    road: "#33383f",
+    sidewalk: "#9aa0a6",
+    grass: "#3f9e57",
+    building: "#b5654d",
+    building2: "#5d7fa3",
+    player: "#ffd23f",
+    police: "#2456c8",
+    ped: "#f2f2f2",
+    car: "#c83a32",
+  },
 };
-
-// localStorage key — bump the version suffix if the save shape changes.
-export const SAVE_KEY = "solar-bay-outlaw-save-v1";
-export const DEFAULT_SEED = 42;
+export const TILE_TYPES = { GRASS: 0, ROAD: 1, BUILDING: 2, BEACH: 3, WATER: 4, SIDEWALK: 5 };

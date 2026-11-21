@@ -1,77 +1,63 @@
-// Seeded coastal city generation: road grid, blocks, buildings,
-// and a beach + water strip along the east edge.
-
-import { TILE, GRID_W, GRID_H, COLORS } from "./config.js";
-import { makeRng } from "./random.js";
-
-export const TILE_ROAD = 0;
-export const TILE_BLOCK = 1;
-export const TILE_SAND = 2;
-export const TILE_WATER = 3;
-
-const ROAD_EVERY = 6; // a road every 6 tiles in both axes — blocks are 5x5 tiles
-const BEACH_START = GRID_W - 8;
-const WATER_START = GRID_W - 5;
+// Pure seeded coastal city generation. No DOM access in this module.
+import { CONFIG, TILE_TYPES } from "./config.js";
+import { mulberry32, randInt, pick } from "./random.js";
 
 export function generateCity(seed) {
-  const rng = makeRng(seed);
-  const tiles = [];
+  const rng = mulberry32(seed);
+  const W = CONFIG.GRID_W;
+  const H = CONFIG.GRID_H;
+  const grid = [];
+  const roads = [];
   const buildings = [];
-
-  for (let y = 0; y < GRID_H; y++) {
+  for (let y = 0; y < H; y++) {
     const row = [];
-    for (let x = 0; x < GRID_W; x++) {
-      if (x >= WATER_START) row.push(TILE_WATER);
-      else if (x >= BEACH_START) row.push(TILE_SAND);
-      else if (x % ROAD_EVERY === 0 || y % ROAD_EVERY === 0) row.push(TILE_ROAD);
-      else row.push(TILE_BLOCK);
+    for (let x = 0; x < W; x++) {
+      let t = TILE_TYPES.GRASS;
+      if (x >= CONFIG.BEACH_X + 3) t = TILE_TYPES.WATER;
+      else if (x >= CONFIG.BEACH_X) t = TILE_TYPES.BEACH;
+      else if (x % CONFIG.ROAD_EVERY === 0 || y % CONFIG.ROAD_EVERY === 0) t = TILE_TYPES.ROAD;
+      row.push(t);
+      if (t === TILE_TYPES.ROAD) roads.push({ x: x, y: y });
     }
-    tiles.push(row);
+    grid.push(row);
   }
-
-  // Fill some blocks with buildings, leaving parks / lots elsewhere.
-  for (let by = 0; by < GRID_H; by += ROAD_EVERY) {
-    for (let bx = 0; bx < BEACH_START; bx += ROAD_EVERY) {
-      if (!rng.chance(0.72)) continue;
-      const w = rng.int(2, 4);
-      const h = rng.int(2, 4);
-      buildings.push({
-        x: (bx + 1) * TILE,
-        y: (by + 1) * TILE,
-        w: w * TILE,
-        h: h * TILE,
-        color: rng.pick(COLORS.building),
-        roof: rng.chance(0.4),
-      });
+  const palette = [CONFIG.COLORS.building, CONFIG.COLORS.building2, "#8a6db5", "#4da38a"];
+  for (let by = 1; by < H - 2; by += CONFIG.BLOCK) {
+    for (let bx = 1; bx < CONFIG.BEACH_X - 2; bx += CONFIG.BLOCK) {
+      if (rng() < 0.18) continue;
+      const bw = randInt(rng, 2, 4);
+      const bh = randInt(rng, 2, 4);
+      const color = pick(rng, palette);
+      for (let y = by; y < Math.min(by + bh, H); y++) {
+        for (let x = bx; x < Math.min(bx + bw, W); x++) grid[y][x] = TILE_TYPES.BUILDING;
+      }
+      buildings.push({ x: bx, y: by, w: bw, h: bh, color: color });
     }
   }
-
-  return { seed, tiles, buildings, beachStart: BEACH_START, waterStart: WATER_START };
+  const stats = {
+    seed: seed,
+    gridW: W,
+    gridH: H,
+    roadTiles: roads.length,
+    buildingCount: buildings.length,
+    worldW: CONFIG.WORLD_W,
+    worldH: CONFIG.WORLD_H,
+  };
+  return { grid: grid, roads: roads, buildings: buildings, stats: stats };
 }
-
-export function tileAt(city, px, py) {
-  const tx = Math.floor(px / TILE);
-  const ty = Math.floor(py / TILE);
-  if (tx < 0 || ty < 0 || tx >= GRID_W || ty >= GRID_H) return TILE_WATER;
-  return city.tiles[ty][tx];
+export function tileAt(city, x, y) {
+  if (!city || y < 0 || y >= city.grid.length) return TILE_TYPES.WATER;
+  const row = city.grid[y];
+  if (x < 0 || x >= row.length) return TILE_TYPES.WATER;
+  return row[x];
 }
-
-export function isRoad(city, px, py) {
-  return tileAt(city, px, py) === TILE_ROAD;
+export function isRoad(city, x, y) {
+  return tileAt(city, x, y) === TILE_TYPES.ROAD;
 }
-
-export function isBlocked(city, px, py) {
-  if (tileAt(city, px, py) === TILE_WATER) return true;
-  return city.buildings.some(
-    (b) => px >= b.x && px < b.x + b.w && py >= b.y && py < b.y + b.h,
-  );
+export function isWater(city, x, y) {
+  return tileAt(city, x, y) === TILE_TYPES.WATER;
 }
-
-export function randomRoadPoint(city, rng) {
-  for (let tries = 0; tries < 200; tries++) {
-    const x = rng.int(1, GRID_W - 10) * TILE + TILE / 2;
-    const y = rng.int(1, GRID_H - 2) * TILE + TILE / 2;
-    if (isRoad(city, x, y)) return { x, y };
-  }
-  return { x: TILE * 3, y: TILE * 3 };
+export function isBlocked(city, x, y) {
+  const t = tileAt(city, x, y);
+  return t === TILE_TYPES.BUILDING || t === TILE_TYPES.WATER;
 }

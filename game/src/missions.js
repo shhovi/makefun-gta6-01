@@ -1,80 +1,28 @@
-// The 5-mission Mara Voss story chain: objectives + dialog.
-// Missions run in order; completing one pays cash and unlocks the next.
-
-import { TILE } from "./config.js";
-
+// Five-mission Mara Voss story chain with objectives and dialog.
 export const MISSIONS = [
-  {
-    id: 1,
-    title: "First Pickup",
-    dialog: "Mara Voss: Pick up the package by the pier. Keep it clean.",
-    objective: "Reach the package marker",
-    marker: { x: TILE * 66, y: TILE * 12 },
-    reward: 150,
-    needVehicle: false,
-  },
-  {
-    id: 2,
-    title: "Hot Wheels",
-    dialog: "Mara Voss: I need a fast car. Bring one to the garage, no scratches.",
-    objective: "Deliver a car to the garage marker",
-    marker: { x: TILE * 12, y: TILE * 48 },
-    reward: 300,
-    needVehicle: true,
-  },
-  {
-    id: 3,
-    title: "Message Delivered",
-    dialog: "Mara Voss: Take this to the old lighthouse crew. Don't be late.",
-    objective: "Reach the lighthouse marker",
-    marker: { x: TILE * 60, y: TILE * 54 },
-    reward: 400,
-    needVehicle: false,
-  },
-  {
-    id: 4,
-    title: "Heat",
-    dialog: "Mara Voss: The PD is watching the bay. Lose them, then come back.",
-    objective: "Reach the marker with no wanted stars",
-    marker: { x: TILE * 30, y: TILE * 30 },
-    reward: 600,
-    needVehicle: false,
-    needClean: true,
-  },
-  {
-    id: 5,
-    title: "The Big Score",
-    dialog: "Mara Voss: One last job, and Solar Bay is ours. Meet me at the docks.",
-    objective: "Reach the docks marker to finish the story",
-    marker: { x: TILE * 72, y: TILE * 30 },
-    reward: 1500,
-    needVehicle: false,
-  },
+  { id: 1, title: "Welcome to Solar Bay", giver: "Mara Voss", dialog: "Mara Voss: New in town? Meet me at the pier and I will show you the ropes.", objective: "Go to the pier marker", x: 1600, y: 320, reward: 100 },
+  { id: 2, title: "First Wheels", giver: "Mara Voss", dialog: "Mara Voss: Borrow a car and bring it to the garage on Palm Street.", objective: "Deliver a car to the garage", x: 320, y: 960, reward: 200 },
+  { id: 3, title: "Hot Package", giver: "Mara Voss", dialog: "Mara Voss: Take this package across town. Do not stop for anyone.", objective: "Deliver the package downtown", x: 960, y: 960, reward: 350 },
+  { id: 4, title: "Heat Wave", giver: "Mara Voss", dialog: "Mara Voss: The police are watching the beach. Lose them, then come back.", objective: "Reach the safehouse with no wanted stars", x: 640, y: 1600, reward: 500 },
+  { id: 5, title: "Solar Bay Finale", giver: "Mara Voss", dialog: "Mara Voss: One last run at sunset. Make it count, outlaw.", objective: "Reach the lighthouse lookout", x: 1700, y: 1700, reward: 1000 },
 ];
-
+export function missionCount() { return MISSIONS.length; }
 export function createMissionState() {
-  return { index: 0, dialogTimer: 0, completed: false };
+  return { index: 0, active: MISSIONS[0], done: [] };
 }
-
-export function currentMission(state) {
-  return state.completed ? null : MISSIONS[state.index] ?? null;
+export function currentObjective(ms) {
+  if (!ms.active) return null;
+  return { x: ms.active.x, y: ms.active.y, text: ms.active.objective };
 }
-
-// Returns an event object when a mission completes, else null.
-export function updateMissions(state, player, wanted, dt) {
-  const mission = currentMission(state);
-  if (!mission) return null;
-  if (state.dialogTimer > 0) state.dialogTimer -= dt;
-
-  const dist = Math.hypot(player.x - mission.marker.x, player.y - mission.marker.y);
-  if (dist > 36) return null;
-  if (mission.needVehicle && !player.vehicle) return null;
-  if (mission.needClean && wanted.level > 0) return null;
-
-  player.money += mission.reward;
-  const finished = mission;
-  state.index += 1;
-  state.dialogTimer = 6;
-  if (state.index >= MISSIONS.length) state.completed = true;
-  return { type: "mission-complete", mission: finished };
+export function checkMission(ms, player, wanted) {
+  if (!ms.active) return null;
+  const m = ms.active;
+  const d = Math.hypot(player.x - m.x, player.y - m.y);
+  if (d > 40) return null;
+  if (m.id === 4 && wanted > 0) return null;
+  ms.done.push(m.id);
+  player.money += m.reward;
+  ms.index += 1;
+  ms.active = MISSIONS[ms.index] || null;
+  return m;
 }

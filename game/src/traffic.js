@@ -1,48 +1,39 @@
-// Traffic AI: cars that follow the road grid, turning at intersections.
-// Traffic yields the driver's seat to the player when hijacked (E).
+// Traffic AI: cars driving along the road grid.
+import { CONFIG } from "./config.js";
+import { isRoad } from "./city.js";
+import { pick } from "./random.js";
 
-import { TILE, COLORS } from "./config.js";
-import { isRoad, randomRoadPoint } from "./city.js";
-import { createVehicle, stepVehicle } from "./vehicles.js";
-
-const DIRS = [
-  { x: 1, y: 0, angle: 0 },
-  { x: -1, y: 0, angle: Math.PI },
-  { x: 0, y: 1, angle: Math.PI / 2 },
-  { x: 0, y: -1, angle: -Math.PI / 2 },
-];
-
-export function spawnTraffic(city, rng, count = 14) {
+export function spawnTraffic(city, rng, count) {
   const cars = [];
+  const colors = ["#c83a32", "#3a7fc8", "#e0a832", "#58a65c", "#dddddd"];
   for (let i = 0; i < count; i++) {
-    const p = randomRoadPoint(city, rng);
-    const dir = rng.pick(DIRS);
-    const car = createVehicle(p.x, p.y, dir.angle, rng.pick(COLORS.car));
-    car.speed = rng.float(90, 170);
-    car.aiDir = dir;
-    car.ai = true;
-    cars.push(car);
+    const r = pick(rng, city.roads);
+    cars.push({
+      x: r.x * CONFIG.TILE + 16, y: r.y * CONFIG.TILE + 16,
+      angle: rng() < 0.5 ? 0 : Math.PI / 2,
+      speed: CONFIG.TRAFFIC_SPEED, color: pick(rng, colors),
+    });
   }
   return cars;
 }
-
-export function updateTraffic(cars, city, rng, dt) {
+export function trafficCount(cars) { return cars.length; }
+export function updateTraffic(cars, city, rng) {
+  const T = CONFIG.TILE;
   for (const car of cars) {
-    if (car.driver) continue; // player is driving this one
-    // At an intersection, maybe turn onto another road direction.
-    const aheadX = car.x + Math.cos(car.angle) * TILE;
-    const aheadY = car.y + Math.sin(car.angle) * TILE;
-    if (!isRoad(city, aheadX, aheadY) || rng.chance(0.004)) {
-      const options = DIRS.filter((d) => isRoad(city, car.x + d.x * TILE, car.y + d.y * TILE));
-      if (options.length) {
-        car.aiDir = rng.pick(options);
-        car.angle = car.aiDir.angle;
-      }
+    const aheadX = Math.floor((car.x + Math.cos(car.angle) * 20) / T);
+    const aheadY = Math.floor((car.y + Math.sin(car.angle) * 20) / T);
+    if (!isRoad(city, aheadX, aheadY)) {
+      car.angle += (rng() < 0.5 ? 1 : -1) * (Math.PI / 2);
+    } else if (rng() < 0.01) {
+      const turn = car.angle + (rng() < 0.5 ? 1 : -1) * (Math.PI / 2);
+      const tx = Math.floor((car.x + Math.cos(turn) * 20) / T);
+      const ty = Math.floor((car.y + Math.sin(turn) * 20) / T);
+      if (isRoad(city, tx, ty)) car.angle = turn;
     }
-    if (car.speed < 110) car.speed += 120 * dt;
-    if (stepVehicle(car, city, dt)) {
-      car.angle += Math.PI / 2;
-      car.speed = 60;
-    }
+    car.x += Math.cos(car.angle) * car.speed;
+    car.y += Math.sin(car.angle) * car.speed;
+    car.x = Math.max(16, Math.min(CONFIG.WORLD_W - 16, car.x));
+    car.y = Math.max(16, Math.min(CONFIG.WORLD_H - 16, car.y));
   }
+  return cars;
 }

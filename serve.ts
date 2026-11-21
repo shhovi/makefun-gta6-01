@@ -1,8 +1,5 @@
-// Minimal static file server for Solar Bay: Outlaw.
-// No dependencies — uses only Deno's built-in HTTP server.
-// Serves ./game by default; see main.ts for the entrypoint.
-
-const MIME_TYPES: Record<string, string> = {
+// Deno static file server for ./game. No dependencies.
+const MIME = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript; charset=utf-8",
   ".css": "text/css; charset=utf-8",
@@ -12,37 +9,24 @@ const MIME_TYPES: Record<string, string> = {
   ".jpeg": "image/jpeg",
 };
 
-function mimeFor(path: string): string {
-  const dot = path.lastIndexOf(".");
-  if (dot === -1) return "application/octet-stream";
-  return MIME_TYPES[path.slice(dot).toLowerCase()] ?? "application/octet-stream";
-}
-
-export interface ServeOptions {
-  root: string;
-  port: number;
-}
-
-export function serveStatic({ root, port }: ServeOptions): void {
-  Deno.serve({ port }, async (req: Request) => {
-    const url = new URL(req.url);
-    let pathname = decodeURIComponent(url.pathname);
-    if (pathname === "/") pathname = "/index.html";
-
-    // Prevent directory traversal outside the game root.
-    const safePath = pathname.replace(/\.\.+/g, ".");
-    const filePath = `${root}${safePath}`;
-
+export async function serveStatic(port) {
+  // Serves ./game only; directory traversal is rejected below.
+  const root = new URL("./game/", import.meta.url).pathname;
+  console.log("Solar Bay serving " + root + " on http://localhost:" + port);
+  await Deno.serve({ port: port }, async (req) => {
     try {
+      const url = new URL(req.url);
+      let path = decodeURIComponent(url.pathname);
+      if (path === "/") path = "/index.html";
+      if (path.includes("..")) return new Response("Forbidden", { status: 403 });
+      const filePath = root + path.replace(/^\//, "");
       const data = await Deno.readFile(filePath);
-      return new Response(data, {
-        headers: { "content-type": mimeFor(filePath) },
-      });
+      const dot = path.lastIndexOf(".");
+      const ext = dot >= 0 ? path.slice(dot).toLowerCase() : "";
+      const type = MIME[ext] || "application/octet-stream";
+      return new Response(data, { headers: { "content-type": type } });
     } catch {
-      return new Response("404 Not Found", {
-        status: 404,
-        headers: { "content-type": "text/plain; charset=utf-8" },
-      });
+      return new Response("404 Not Found", { status: 404 });
     }
-  });
+  }).finished;
 }

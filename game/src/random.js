@@ -1,9 +1,7 @@
-// Seeded PRNG (mulberry32) so the city and screenshot scenes are
-// fully deterministic for a given seed.
-
+// Pure seeded PRNG helpers. No DOM access in this module.
 export function mulberry32(seed) {
   let a = seed >>> 0;
-  return function next() {
+  return function () {
     a |= 0;
     a = (a + 0x6d2b79f5) | 0;
     let t = Math.imul(a ^ (a >>> 15), 1 | a);
@@ -11,30 +9,23 @@ export function mulberry32(seed) {
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
   };
 }
-
-export class Rng {
-  constructor(seed) {
-    this.next = mulberry32(seed);
-  }
-
-  float(min = 0, max = 1) {
-    return min + this.next() * (max - min);
-  }
-
-  int(min, max) {
-    return Math.floor(this.float(min, max + 1));
-  }
-
-  pick(list) {
-    return list[Math.floor(this.next() * list.length)];
-  }
-
-  chance(p) {
-    return this.next() < p;
-  }
+export function randRange(rng, min, max) {
+  return min + rng() * (max - min);
 }
-
-export function makeRng(seed) {
-  // Same seed always produces the same sequence — city + screenshots rely on it.
-  return new Rng(seed);
+export function randInt(rng, min, max) {
+  return Math.floor(randRange(rng, min, max + 1));
+}
+export function pick(rng, arr) {
+  return arr[Math.floor(rng() * arr.length)];
+}
+export function shuffle(rng, arr) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(rng() * (i + 1));
+    const t = a[i]; a[i] = a[j]; a[j] = t;
+  }
+  return a;
+}
+export function chance(rng, p) {
+  return rng() < p;
 }

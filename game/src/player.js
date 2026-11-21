@@ -1,80 +1,46 @@
-// The player: on-foot movement, entering/exiting vehicles, health.
-// While driving, the player position simply follows the vehicle.
-
-import { PLAYER_SPEED, PLAYER_RUN, WORLD_W, WORLD_H } from "./config.js";
+// Player: on-foot movement, vehicle enter/exit, health.
+import { CONFIG } from "./config.js";
 import { isBlocked } from "./city.js";
 
 export function createPlayer(x, y) {
-  return {
-    x,
-    y,
-    angle: 0,
-    health: 100,
-    money: 0,
-    vehicle: null,
-    punchCooldown: 0,
-    shootCooldown: 0,
-  };
+  return { x: x, y: y, vx: 0, vy: 0, angle: 0, health: CONFIG.MAX_HEALTH, money: 0, vehicle: null, alive: true };
 }
-
-export function updatePlayer(player, input, city, dt) {
-  if (player.punchCooldown > 0) player.punchCooldown -= dt;
-  if (player.shootCooldown > 0) player.shootCooldown -= dt;
-
+export function updatePlayer(player, input, city) {
   if (player.vehicle) {
     player.x = player.vehicle.x;
     player.y = player.vehicle.y;
-    player.angle = player.vehicle.angle;
     return;
   }
-
-  const axis = input.axis();
-  const len = Math.hypot(axis.x, axis.y);
-  if (len === 0) return;
-  const running = input.keys.has("shift");
-  const speed = running ? PLAYER_RUN : PLAYER_SPEED;
-  const nx = player.x + (axis.x / len) * speed * dt;
-  const ny = player.y + (axis.y / len) * speed * dt;
-
-  if (!isBlocked(city, nx, player.y)) player.x = nx;
-  if (!isBlocked(city, player.x, ny)) player.y = ny;
-  player.x = Math.max(10, Math.min(WORLD_W - 10, player.x));
-  player.y = Math.max(10, Math.min(WORLD_H - 10, player.y));
-  player.angle = Math.atan2(axis.y, axis.x);
+  const ax = input.axis();
+  const run = input.isDown("shift") ? CONFIG.PLAYER_RUN : CONFIG.PLAYER_SPEED;
+  const len = Math.hypot(ax.x, ax.y) || 1;
+  const nx = player.x + (ax.x / len) * run * (ax.x || ax.y ? 1 : 0);
+  const ny = player.y + (ax.y / len) * run * (ax.x || ax.y ? 1 : 0);
+  const T = CONFIG.TILE;
+  if (!isBlocked(city, Math.floor(nx / T), Math.floor(player.y / T))) player.x = nx;
+  if (!isBlocked(city, Math.floor(player.x / T), Math.floor(ny / T))) player.y = ny;
+  if (ax.x || ax.y) player.angle = Math.atan2(ax.y, ax.x);
+  player.x = Math.max(8, Math.min(CONFIG.WORLD_W - 8, player.x));
+  player.y = Math.max(8, Math.min(CONFIG.WORLD_H - 8, player.y));
 }
-
-export function nearestVehicle(player, vehicles, maxDist = 48) {
-  let best = null;
-  let bestDist = maxDist;
+export function nearestVehicle(player, vehicles, maxDist) {
+  let best = null, bestD = maxDist || 48;
   for (const v of vehicles) {
     const d = Math.hypot(v.x - player.x, v.y - player.y);
-    if (d < bestDist) {
-      best = v;
-      bestDist = d;
-    }
+    if (d < bestD) { bestD = d; best = v; }
   }
   return best;
 }
-
-export function toggleVehicle(player, vehicles) {
-  if (player.vehicle) {
-    const car = player.vehicle;
-    car.driver = null;
-    player.vehicle = null;
-    player.x = car.x + Math.cos(car.angle + Math.PI / 2) * 26;
-    player.y = car.y + Math.sin(car.angle + Math.PI / 2) * 26;
-    return "exited";
-  }
-  const car = nearestVehicle(player, vehicles);
-  if (car) {
-    car.driver = player;
-    player.vehicle = car;
-    return "entered";
-  }
-  return null;
-}
-
 export function damagePlayer(player, amount) {
   player.health = Math.max(0, player.health - amount);
-  return player.health <= 0;
+  if (player.health <= 0) player.alive = false;
+  return player.alive;
+}
+export function respawnPlayer(player, x, y) {
+  player.x = x; player.y = y; player.health = CONFIG.MAX_HEALTH;
+  player.alive = true; player.vehicle = null;
+  return player;
+}
+export function healPlayer(player, amount) {
+  player.health = Math.min(CONFIG.MAX_HEALTH, player.health + amount);
 }
